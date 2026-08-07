@@ -1,0 +1,47 @@
+name: Release
+
+# v1.0 같은 태그를 push하면 DMG를 빌드해 릴리스에 첨부한다.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test before packaging
+        run: swift test
+
+      - name: Build DMG
+        run: ./Scripts/make-dmg.sh
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.sha256
+          body: |
+            ## 설치
+
+            `DiskTidy-*.dmg`를 받아 열고 `DiskTidy.app`을 `Applications`로 끌어다 놓으세요.
+
+            무결성 확인:
+            ```bash
+            shasum -a 256 -c DiskTidy-*.dmg.sha256
+            ```
+
+            ## 첫 실행
+
+            ad-hoc 서명이라 Apple 공증을 받지 않았습니다. macOS가 차단하면:
+
+            - **macOS 15 이상**: 시스템 설정 → 개인정보 보호 및 보안 → **"확인 없이 열기"**
+            - **macOS 13~14**: 앱 우클릭 → **열기**
+            - **터미널**: `xattr -dr com.apple.quarantine /Applications/DiskTidy.app`
+
+            자세한 내용은 [README](https://github.com/${{ github.repository }}#첫-실행-gatekeeper) 참고.

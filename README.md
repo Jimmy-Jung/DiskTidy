@@ -54,17 +54,55 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 swift test                # 테스트
 ```
 
-## 앱으로 설치
+## 설치
+
+### 내려받아 설치 (DMG)
+
+[Releases](../../releases)에서 `DiskTidy-<version>.dmg`를 받아 열고 `DiskTidy.app`을 `Applications`로 끌어다 놓는다.
+
+무결성 확인:
 
 ```bash
-./Scripts/build-app.sh    # release 빌드 → DiskTidy.app 생성 → ~/Applications 설치
+shasum -a 256 -c DiskTidy-1.0.dmg.sha256
+```
+
+### 소스에서 빌드
+
+```bash
+./Scripts/build-app.sh    # release 빌드 → DiskTidy.app → ~/Applications 설치
+./Scripts/make-dmg.sh     # release 빌드 → dist/DiskTidy-<version>.dmg + .sha256
+./Scripts/make-app.sh     # DiskTidy.app 번들만 (설치·배포 안 함)
 ```
 
 `Info.plist`의 `LSUIElement=true` 때문에 설치된 `.app`은 Dock 아이콘 없이 메뉴바로만 상주한다 (개발 모드 `run.sh`는 영향 없음).
 
-**첫 실행:** ad-hoc 서명(무료)이라 공증되지 않았다. macOS가 "확인되지 않은 개발자" 경고를 띄우면 앱을 **우클릭 → 열기**로 한 번 실행하면 이후에는 그냥 열린다. 매 빌드마다 서명이 바뀌므로 폴더 접근 권한을 다시 물어볼 수 있다.
+### 첫 실행 (Gatekeeper)
 
-**포크한다면:** `Info.plist`의 `CFBundleIdentifier`(`com.jimmy.disktidy`)와 `TrashService`의 로거 subsystem을 본인 것으로 바꿀 것.
+이 앱은 **ad-hoc 서명(무료)이라 Apple 공증을 받지 않았다.** 처음 열면 macOS가 차단한다.
+
+**macOS 15 Sequoia 이상** — Apple이 우클릭 → 열기 우회를 제거했다. 다음 순서로 허용한다:
+
+1. `DiskTidy.app`을 한 번 실행 → 차단 경고가 뜨면 닫는다
+2. **시스템 설정 → 개인정보 보호 및 보안** 으로 이동
+3. 아래로 스크롤해 DiskTidy 항목의 **"확인 없이 열기"** 를 누른다
+
+**macOS 13~14** — `DiskTidy.app`을 **우클릭 → 열기** 로 한 번 실행하면 이후에는 그냥 열린다.
+
+**터미널로 처리** (개발자용, 어느 버전이든 동작):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/DiskTidy.app
+```
+
+서명을 신뢰하기 전에 직접 확인하려면:
+
+```bash
+codesign -dv --verbose=4 /Applications/DiskTidy.app
+```
+
+빌드마다 ad-hoc 서명이 새로 생성되므로, 재설치 후 macOS가 폴더 접근 권한(TCC)을 다시 물어볼 수 있다.
+
+**포크한다면:** `Info.plist`의 `CFBundleIdentifier`(`com.jimmy.disktidy`)와 `TrashService`의 로거 subsystem을 본인 것으로 바꿀 것. 공증까지 하려면 Apple Developer Program($99/년) 가입 후 `codesign --options runtime --sign "Developer ID Application: ..."` + `xcrun notarytool submit`이 필요하다.
 
 ## 앱 아이콘 재생성
 
@@ -90,9 +128,12 @@ DiskTidy/
     AppIcon.iconset/       # 중간 산출물 (git 제외, generate-icon.sh가 재생성)
   Scripts/
     run.sh                 # 개발 모드 실행
-    build-app.sh           # .app 빌드 + ~/Applications 설치
+    make-app.sh            # DiskTidy.app 번들 생성 (아래 둘이 공유)
+    build-app.sh           # make-app.sh + ~/Applications 설치
+    make-dmg.sh            # make-app.sh + dist/DiskTidy-<version>.dmg + .sha256
     generate-icon.sh       # 아이콘 전체 파이프라인
     generate-icon.swift    # 아이콘 PNG 렌더러
+  dist/                    # DMG 산출물 (git 제외)
   Sources/DiskTidy/
     DiskTidyApp.swift      # @main, WindowGroup + MenuBarExtra
     Models/                # CleanableItem, SimulatorItem, StorageSnapshot, AppNavigationState

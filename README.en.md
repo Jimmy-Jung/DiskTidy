@@ -56,17 +56,55 @@ Directories whose names unambiguously mean "build cache" are matched by name. Ge
 swift test                # tests
 ```
 
-## Installing as an app
+## Installation
+
+### Download (DMG)
+
+Grab `DiskTidy-<version>.dmg` from [Releases](../../releases), open it, and drag `DiskTidy.app` onto `Applications`.
+
+Verify integrity:
+
+```bash
+shasum -a 256 -c DiskTidy-1.0.dmg.sha256
+```
+
+### Build from source
 
 ```bash
 ./Scripts/build-app.sh    # release build → DiskTidy.app → installs to ~/Applications
+./Scripts/make-dmg.sh     # release build → dist/DiskTidy-<version>.dmg + .sha256
+./Scripts/make-app.sh     # DiskTidy.app bundle only (no install, no packaging)
 ```
 
 `LSUIElement=true` in `Info.plist` means the installed `.app` lives only in the menu bar, with no Dock icon.
 
-**First launch:** the build is ad-hoc signed (free) and therefore not notarized. If macOS blocks it, **right-click → Open** once; subsequent launches work normally. Each build gets a new signature, so macOS may re-ask for folder permissions.
+### First launch (Gatekeeper)
 
-**If you fork:** change `CFBundleIdentifier` in `Info.plist` (`com.jimmy.disktidy`) and the logger subsystem in `TrashService` to your own.
+This app is **ad-hoc signed (free) and therefore not notarized by Apple.** macOS will block the first launch.
+
+**macOS 15 Sequoia and later** — Apple removed the right-click → Open bypass. Allow it this way:
+
+1. Launch `DiskTidy.app` once, then dismiss the block warning
+2. Go to **System Settings → Privacy & Security**
+3. Scroll down to the DiskTidy entry and click **"Open Anyway"**
+
+**macOS 13–14** — **right-click → Open** once; subsequent launches work normally.
+
+**From the terminal** (works on any version):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/DiskTidy.app
+```
+
+To inspect the signature before trusting it:
+
+```bash
+codesign -dv --verbose=4 /Applications/DiskTidy.app
+```
+
+Each build generates a fresh ad-hoc signature, so macOS may re-ask for folder permissions (TCC) after reinstalling.
+
+**If you fork:** change `CFBundleIdentifier` in `Info.plist` (`com.jimmy.disktidy`) and the logger subsystem in `TrashService` to your own. To notarize, you need an Apple Developer Program membership ($99/year), then `codesign --options runtime --sign "Developer ID Application: ..."` plus `xcrun notarytool submit`.
 
 ## Design notes
 
