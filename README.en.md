@@ -6,6 +6,22 @@ A macOS disk-cleanup utility. Review and clear app caches, simulators, build cac
 
 > The app UI is currently Korean-only. Localization contributions are welcome.
 
+<img src="docs/screenshots/01-storage.png" width="820" alt="DiskTidy SSD usage screen">
+
+## Screens
+
+| | |
+|---|---|
+| **App caches** — `~/Library/Caches` by size<br><img src="docs/screenshots/02-cache.png" width="400" alt="App caches screen"> | **Simulators** — least recently used on top<br><img src="docs/screenshots/03-simulator.png" width="400" alt="Simulators screen"> |
+| **Project caches** — recursive build-cache scan<br><img src="docs/screenshots/04-project-cache.png" width="400" alt="Project caches screen"> | **Large files** — files over 200 MB<br><img src="docs/screenshots/06-big-files.png" width="400" alt="Large files screen"> |
+| **Android caches** — Gradle · Android Studio<br><img src="docs/screenshots/07-android-cache.png" width="400" alt="Android caches screen"> | **Android emulators** — AVD list<br><img src="docs/screenshots/08-android-emulator.png" width="400" alt="Android emulators screen"> |
+
+The menu-bar item shows SSD usage at all times; clicking it opens a minimal dropdown.
+
+<img src="docs/screenshots/09-menubar.png" width="240" alt="Menu bar dropdown">
+
+> These are real screenshots from daily use. Only the personal parts — cache entry names and project paths — are blurred.
+
 ## Features
 
 Eight screens in a sidebar, plus a persistent menu-bar item.
@@ -60,7 +76,9 @@ swift test                # tests
 
 ### Download (DMG)
 
-Grab `DiskTidy-<version>.dmg` from [Releases](../../releases), open it, and drag `DiskTidy.app` onto `Applications`.
+**Step 1.** Grab `DiskTidy-<version>.dmg` from [Releases](../../releases), open it, and drag `DiskTidy.app` onto `Applications`.
+
+<img src="docs/screenshots/10-install-dmg.png" width="600" alt="Open the DMG and drag DiskTidy.app onto Applications">
 
 Verify integrity:
 
@@ -80,7 +98,11 @@ shasum -a 256 -c DiskTidy-1.0.dmg.sha256
 
 ### First launch (Gatekeeper)
 
-This app is **ad-hoc signed (free) and therefore not notarized by Apple.** macOS will block the first launch.
+This app is **ad-hoc signed (free) and therefore not notarized by Apple.** macOS will block the first launch with the warning below. That is expected.
+
+<img src="docs/screenshots/11-install-gatekeeper.png" width="260" alt="Gatekeeper warning: 'DiskTidy' Not Opened">
+
+> **Do not click Move to Trash.** Click `Done` and follow the steps below.
 
 **macOS 15 Sequoia and later** — Apple removed the right-click → Open bypass. Allow it this way:
 

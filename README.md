@@ -4,6 +4,22 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 
 [English](README.en.md) · MIT License
 
+<img src="docs/screenshots/01-storage.png" width="820" alt="DiskTidy SSD 용량 화면">
+
+## 화면
+
+| | |
+|---|---|
+| **캐시데이터** — `~/Library/Caches` 앱별 캐시를 크기순으로<br><img src="docs/screenshots/02-cache.png" width="400" alt="캐시데이터 화면"> | **시뮬레이터** — 오래 방치된 기기가 위로<br><img src="docs/screenshots/03-simulator.png" width="400" alt="시뮬레이터 화면"> |
+| **프로젝트 캐시** — 고른 폴더 하위 빌드 캐시 재귀 탐색<br><img src="docs/screenshots/04-project-cache.png" width="400" alt="프로젝트 캐시 화면"> | **대용량 파일** — 200MB 이상 파일 탐색<br><img src="docs/screenshots/06-big-files.png" width="400" alt="대용량 파일 화면"> |
+| **Android 캐시** — Gradle · Android Studio<br><img src="docs/screenshots/07-android-cache.png" width="400" alt="Android 캐시 화면"> | **Android 에뮬레이터** — AVD 목록<br><img src="docs/screenshots/08-android-emulator.png" width="400" alt="Android 에뮬레이터 화면"> |
+
+메뉴바 아이콘은 SSD 사용률을 상시 표시하고, 클릭하면 최소 드롭다운이 열린다.
+
+<img src="docs/screenshots/09-menubar.png" width="240" alt="메뉴바 드롭다운">
+
+> 스크린샷은 실제 사용 화면이다. 캐시 항목명·프로젝트 경로 등 개인 정보에 해당하는 부분만 모자이크 처리했다.
+
 ## 기능
 
 좌측 사이드바로 이동하는 8개 화면 + 메뉴바 상시 표시.
@@ -58,7 +74,9 @@ swift test                # 테스트
 
 ### 내려받아 설치 (DMG)
 
-[Releases](../../releases)에서 `DiskTidy-<version>.dmg`를 받아 열고 `DiskTidy.app`을 `Applications`로 끌어다 놓는다.
+**1단계.** [Releases](../../releases)에서 `DiskTidy-<version>.dmg`를 받아 열고 `DiskTidy.app`을 `Applications`로 끌어다 놓는다.
+
+<img src="docs/screenshots/10-install-dmg.png" width="600" alt="DMG를 열어 DiskTidy.app을 Applications로 드래그">
 
 무결성 확인:
 
@@ -78,7 +96,11 @@ shasum -a 256 -c DiskTidy-1.0.dmg.sha256
 
 ### 첫 실행 (Gatekeeper)
 
-이 앱은 **ad-hoc 서명(무료)이라 Apple 공증을 받지 않았다.** 처음 열면 macOS가 차단한다.
+이 앱은 **ad-hoc 서명(무료)이라 Apple 공증을 받지 않았다.** 처음 열면 macOS가 아래 경고를 띄우며 차단한다. 정상이다.
+
+<img src="docs/screenshots/11-install-gatekeeper.png" width="260" alt="Gatekeeper 차단 경고: 'DiskTidy'을(를) 열지 않음">
+
+> **휴지통으로 이동을 누르지 말 것.** `완료`를 누르고 아래 절차를 따른다.
 
 **macOS 15 Sequoia 이상** — Apple이 우클릭 → 열기 우회를 제거했다. 다음 순서로 허용한다:
 
@@ -121,7 +143,10 @@ DiskTidy/
   LICENSE                  # MIT
   README.md / README.en.md
   CONTRIBUTING.md
-  .github/workflows/ci.yml # 빌드 + 테스트 + 경고 0건 검사
+  .github/workflows/
+    ci.yml                 # 빌드 + 테스트 + 경고 0건 검사
+    release.yml            # v* 태그 push 시 DMG 빌드 + 릴리스 첨부
+  docs/screenshots/        # README용 스크린샷
   Resources/
     AppIcon-1024.png       # 아이콘 소스 PNG
     AppIcon.icns           # 앱에 실제 포함되는 아이콘
