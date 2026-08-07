@@ -28,7 +28,10 @@ hdiutil create \
     -ov \
     "$DMG"
 
-shasum -a 256 "$DMG" | tee "$DMG.sha256"
+# 체크섬은 파일명만 담는다. 경로가 들어가면 내려받은 사람이
+# shasum -a 256 -c 를 돌릴 때 dist/ 를 찾지 못해 실패한다.
+DMG_NAME=$(basename "$DMG")
+(cd "$DIST" && shasum -a 256 "$DMG_NAME" | tee "$DMG_NAME.sha256")
 
 echo ""
 echo "DMG 생성 완료: $DMG ($(du -h "$DMG" | cut -f1))"
