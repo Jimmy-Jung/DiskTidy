@@ -201,13 +201,16 @@ struct CleanableListDeletionTests {
     func doesNotDropItemsSelectedMidDeletion() async {
         // 삭제 중에도 체크박스는 열려 있다. 현재 선택 상태로 목록을 지우면
         // 휴지통에 가지도 않은 항목이 조용히 사라진다.
-        let trash = TrashRecorder(delay: 0.3)
+        let trash = TrashRecorder(gated: true)
         let viewModel = CleanableListViewModel(scan: { [] }, trash: { trash.trash($0) })
         viewModel.items = [item("a", selected: true), item("b")]
 
         viewModel.deleteSelected()
-        try? await Task.sleep(for: .milliseconds(50))
+        // 첫 삭제가 실제로 시작될 때까지 붙잡는다. 시간으로 어림잡으면
+        // 느린 러너에서 삭제가 먼저 끝나 아래 인덱스가 범위를 벗어난다.
+        #expect(await waitUntil { trash.trashedNames.count == 1 })
         viewModel.items[1].isSelected = true
+        trash.release()
 
         #expect(await waitUntil { !viewModel.isDeleting })
         #expect(trash.trashedNames == ["a"])
@@ -216,14 +219,16 @@ struct CleanableListDeletionTests {
 
     @Test("삭제 중 다시 누르면 무시한다")
     func deleteIsReentrancyGuarded() async {
-        let trash = TrashRecorder(delay: 0.2)
+        let trash = TrashRecorder(gated: true)
         let viewModel = CleanableListViewModel(scan: { [] }, trash: { trash.trash($0) })
         viewModel.items = [item("a", selected: true)]
 
         viewModel.deleteSelected()
         #expect(viewModel.isDeleting)
-        viewModel.deleteSelected()
+        viewModel.deleteSelected() // 무시돼야 한다
 
+        // 재진입이 뚫리면 두 번째 삭제가 게이트에 걸려 영영 끝나지 않는다.
+        trash.release()
         #expect(await waitUntil { !viewModel.isDeleting })
         #expect(trash.trashedNames == ["a"])
     }

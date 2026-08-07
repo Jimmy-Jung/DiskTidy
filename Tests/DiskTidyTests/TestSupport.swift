@@ -111,20 +111,26 @@ final class TrashRecorder: @unchecked Sendable {
     private var recorded: [URL] = []
 
     private let failingNames: Set<String>
-    private let delay: TimeInterval
 
-    init(failingNames: Set<String> = [], delay: TimeInterval = 0) {
+    /// `gated: true`면 각 호출이 `release()`가 올 때까지 반환하지 않는다.
+    /// "삭제 진행 중" 상태를 시간이 아니라 신호로 붙잡아 느린 CI에서도 흔들리지 않는다.
+    private let gate: DispatchSemaphore?
+
+    init(failingNames: Set<String> = [], gated: Bool = false) {
         self.failingNames = failingNames
-        self.delay = delay
+        gate = gated ? DispatchSemaphore(value: 0) : nil
     }
 
     func trash(_ url: URL) -> Bool {
-        if delay > 0 { Thread.sleep(forTimeInterval: delay) }
         lock.lock()
         recorded.append(url)
         lock.unlock()
+        gate?.wait()
         return !failingNames.contains(url.lastPathComponent)
     }
+
+    /// 붙잡아 둔 삭제 한 건을 재개시킨다.
+    func release() { gate?.signal() }
 
     var trashedPaths: [URL] {
         lock.lock()
