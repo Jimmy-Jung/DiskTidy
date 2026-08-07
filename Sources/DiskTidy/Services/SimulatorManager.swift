@@ -11,37 +11,59 @@ private struct SimctlDevice: Decodable {
     let isAvailable: Bool?
 }
 
+/// `simctl list devices -j`에서 뽑아낸 기기 한 대. 디스크 접근 전의 순수 데이터라
+/// 파싱 규칙만 따로 검증할 수 있다.
+struct SimulatorEntry: Equatable {
+    let udid: String
+    let name: String
+    let runtime: String
+    let state: String
+}
+
 enum SimulatorManager {
+    static var defaultDevicesRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Developer/CoreSimulator/Devices")
+    }
+
     static func listDevices() -> [SimulatorItem] {
         let result = ShellRunner.runXcrun(["simctl", "list", "devices", "-j"])
-        guard result.succeeded,
-              let data = result.output.data(using: .utf8),
-              let list = try? JSONDecoder().decode(SimctlDeviceList.self, from: data) else {
-            return []
-        }
+        guard result.succeeded, let data = result.output.data(using: .utf8) else { return [] }
+        return makeItems(from: parseDevices(data), devicesRoot: defaultDevicesRoot)
+    }
 
-        let devicesRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Developer/CoreSimulator/Devices")
-
-        // 런타임이 삭제된 고아 기기는 simctl이 isAvailable=false로 표시한다.
-        // 실체가 없어 삭제도 안 되므로 목록에서 뺀다.
-        let available = list.devices.flatMap { runtimeKey, devices in
+    /// 런타임이 삭제된 고아 기기는 simctl이 isAvailable=false로 표시한다.
+    /// 실체가 없어 삭제도 안 되므로 목록에서 뺀다.
+    static func parseDevices(_ data: Data) -> [SimulatorEntry] {
+        guard let list = try? JSONDecoder().decode(SimctlDeviceList.self, from: data) else { return [] }
+        return list.devices.flatMap { runtimeKey, devices in
             devices
                 .filter { $0.isAvailable ?? true }
-                .map { (runtime: shortRuntimeName(runtimeKey), device: $0) }
+                .map {
+                    SimulatorEntry(
+                        udid: $0.udid,
+                        name: $0.name,
+                        runtime: shortRuntimeName(runtimeKey),
+                        state: $0.state
+                    )
+                }
         }
+    }
 
-        let deviceURLs = available.map { devicesRoot.appendingPathComponent($0.device.udid) }
+    /// 마지막 사용 시각은 기기 디렉터리 자체보다 `data/Library/Preferences`가 정확하다.
+    /// 부팅한 적 없는 기기에는 그 경로가 없으므로 기기 디렉터리로 물러난다.
+    static func makeItems(from entries: [SimulatorEntry], devicesRoot: URL) -> [SimulatorItem] {
+        let deviceURLs = entries.map { devicesRoot.appendingPathComponent($0.udid) }
         let sizes = DiskScanner.sizes(of: deviceURLs)
 
-        return available
+        return entries
             .map { entry in
-                let deviceURL = devicesRoot.appendingPathComponent(entry.device.udid)
+                let deviceURL = devicesRoot.appendingPathComponent(entry.udid)
                 return SimulatorItem(
-                    id: entry.device.udid,
-                    name: entry.device.name,
+                    id: entry.udid,
+                    name: entry.name,
                     runtime: entry.runtime,
-                    state: entry.device.state,
+                    state: entry.state,
                     sizeBytes: sizes[deviceURL] ?? 0,
                     lastUsed: FileAttributes.modificationDate(
                         of: deviceURL.appendingPathComponent("data/Library/Preferences")

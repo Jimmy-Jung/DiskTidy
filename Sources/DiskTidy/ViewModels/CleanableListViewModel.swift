@@ -22,21 +22,28 @@ final class CleanableListViewModel: ObservableObject {
     /// 항목 본체 외에 함께 지워야 하는 부수 파일 (예: AVD의 `<name>.ini` 포인터).
     private let companionPaths: @Sendable (CleanableItem) -> [URL]
 
+    /// 실제 삭제 수단. 테스트가 사용자의 휴지통을 건드리지 않도록 주입 가능하게 둔다.
+    private let trash: @Sendable (URL) -> Bool
+
     init(
         scan: @escaping @Sendable () -> [CleanableItem],
-        companionPaths: @escaping @Sendable (CleanableItem) -> [URL] = { _ in [] }
+        companionPaths: @escaping @Sendable (CleanableItem) -> [URL] = { _ in [] },
+        trash: @escaping @Sendable (URL) -> Bool = { TrashService.trash($0) }
     ) {
         self.scan = { _ in scan() }
         self.companionPaths = companionPaths
+        self.trash = trash
         requiresRoots = false
     }
 
     init(
         rootScan: @escaping @Sendable ([URL]) -> [CleanableItem],
-        companionPaths: @escaping @Sendable (CleanableItem) -> [URL] = { _ in [] }
+        companionPaths: @escaping @Sendable (CleanableItem) -> [URL] = { _ in [] },
+        trash: @escaping @Sendable (URL) -> Bool = { TrashService.trash($0) }
     ) {
         scan = rootScan
         self.companionPaths = companionPaths
+        self.trash = trash
         requiresRoots = true
     }
 
@@ -73,12 +80,13 @@ final class CleanableListViewModel: ObservableObject {
         errorMessage = nil
 
         let companionPaths = self.companionPaths
+        let trash = self.trash
         Task {
             // 수 GB 디렉터리를 메인 스레드에서 지우면 UI가 멈춘다.
             let failedIDs = await Task.detached(priority: .userInitiated) { () -> Set<UUID> in
                 var failed: Set<UUID> = []
                 for item in targets {
-                    guard TrashService.trash(item.path) else {
+                    guard trash(item.path) else {
                         failed.insert(item.id)
                         continue
                     }
@@ -86,13 +94,17 @@ final class CleanableListViewModel: ObservableObject {
                     // 용량에는 영향이 없다. TrashService가 로그를 남기므로 여기선 넘긴다.
                     for companion in companionPaths(item)
                         where FileManager.default.fileExists(atPath: companion.path) {
-                        _ = TrashService.trash(companion)
+                        _ = trash(companion)
                     }
                 }
                 return failed
             }.value
 
-            self.items.removeAll { $0.isSelected && !failedIDs.contains($0.id) }
+            // 삭제 중에도 체크박스는 열려 있다. 현재 선택 상태로 지우면 삭제가 시작된 뒤
+            // 새로 체크된 항목이 휴지통에 가지도 않은 채 목록에서만 사라진다.
+            // 반드시 시작 시점에 스냅샷한 대상 ID로만 제거한다.
+            let deletedIDs = Set(targets.map(\.id)).subtracting(failedIDs)
+            self.items.removeAll { deletedIDs.contains($0.id) }
             self.isDeleting = false
             self.errorMessage = Self.failureMessage(failedCount: failedIDs.count)
         }

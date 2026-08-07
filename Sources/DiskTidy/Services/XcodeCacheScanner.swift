@@ -1,10 +1,12 @@
 import Foundation
 
 enum XcodeCacheScanner {
-    static func scan() -> [CleanableItem] {
-        let devURL = FileManager.default.homeDirectoryForCurrentUser
+    static var defaultDevURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Developer/Xcode")
+    }
 
+    static func scan(devURL: URL = defaultDevURL) -> [CleanableItem] {
         var labeled: [(name: String, url: URL)] = []
         labeled += subdirectories(of: devURL.appendingPathComponent("DerivedData"), prefix: "DerivedData")
 

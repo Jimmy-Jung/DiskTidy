@@ -1,9 +1,11 @@
 import Foundation
 
 enum CacheScanner {
-    static func scan() -> [CleanableItem] {
-        let cachesURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches")
+    static var defaultCachesURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches")
+    }
+
+    static func scan(cachesURL: URL = defaultCachesURL) -> [CleanableItem] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: cachesURL, includingPropertiesForKeys: nil
         ) else { return [] }

@@ -40,8 +40,11 @@ final class RootFolderViewModel: ObservableObject {
         RootFolderStore.save(roots, key: storeKey)
     }
 
+    /// 저장에서 되살아난 URL은 끝 슬래시가 붙어 원본과 `==` 비교가 어긋난다.
+    /// 표준화한 경로로 맞춰야 "제거"가 조용히 실패하지 않는다.
     func removeRoot(_ url: URL) {
-        roots.removeAll { $0 == url }
+        let target = url.standardizedFileURL.path
+        roots.removeAll { $0.standardizedFileURL.path == target }
         RootFolderStore.save(roots, key: storeKey)
     }
 }

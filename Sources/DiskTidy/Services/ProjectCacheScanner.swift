@@ -52,11 +52,14 @@ enum ProjectCacheScanner {
     }
 
     /// 루트의 부모를 기준으로 상대 경로를 만들어 "MyProject/node_modules" 형태로 보여준다.
+    /// 양쪽 다 심볼릭 링크를 푼 뒤 비교한다. `contentsOfDirectory`는 실경로(/private/var/…)를
+    /// 주는데 루트는 링크 경로(/var/…)일 수 있어 그대로 비교하면 접두사가 어긋난다.
     static func displayName(for url: URL, roots: [URL]) -> String {
+        let resolved = url.resolvingSymlinksInPath().path
         for root in roots {
-            let prefix = root.deletingLastPathComponent().path + "/"
-            if url.path.hasPrefix(prefix) {
-                return String(url.path.dropFirst(prefix.count))
+            let prefix = root.resolvingSymlinksInPath().deletingLastPathComponent().path + "/"
+            if resolved.hasPrefix(prefix) {
+                return String(resolved.dropFirst(prefix.count))
             }
         }
         return url.path

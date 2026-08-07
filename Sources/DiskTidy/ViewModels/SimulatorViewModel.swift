@@ -7,28 +7,42 @@ final class SimulatorViewModel: ObservableObject {
     @Published var isBusy = false
     @Published var errorMessage: String?
 
+    /// simctl 호출은 되돌릴 수 없다. 테스트가 실기기를 지우지 않도록 주입 가능하게 둔다.
+    /// 정적 메서드 참조는 @Sendable로 추론되지 않아 캡처 없는 클로저 리터럴로 감싼다.
+    private let list: @Sendable () -> [SimulatorItem]
+    private let delete: @Sendable (String) -> Bool
+    private let erase: @Sendable (String) -> Bool
+
+    init(
+        list: @escaping @Sendable () -> [SimulatorItem] = { SimulatorManager.listDevices() },
+        delete: @escaping @Sendable (String) -> Bool = { SimulatorManager.deleteDevice($0) },
+        erase: @escaping @Sendable (String) -> Bool = { SimulatorManager.eraseDevice($0) }
+    ) {
+        self.list = list
+        self.delete = delete
+        self.erase = erase
+    }
+
     var selectedItems: [SimulatorItem] { items.filter(\.isSelected) }
     var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.sizeBytes } }
 
     func refresh() {
         guard !isScanning else { return }
         isScanning = true
+        let list = self.list
         Task {
-            let scanned = await Task.detached(priority: .userInitiated) {
-                SimulatorManager.listDevices()
-            }.value
+            let scanned = await Task.detached(priority: .userInitiated) { list() }.value
             items = scanned
             isScanning = false
         }
     }
 
-    // 정적 메서드 참조는 @Sendable로 추론되지 않는다. 캡처 없는 클로저 리터럴로 감싼다.
     func deleteSelected() {
-        run(action: { SimulatorManager.deleteDevice($0) }, verb: "삭제")
+        run(action: delete, verb: "삭제")
     }
 
     func eraseSelected() {
-        run(action: { SimulatorManager.eraseDevice($0) }, verb: "초기화")
+        run(action: erase, verb: "초기화")
     }
 
     func selectAll(_ isSelected: Bool) {

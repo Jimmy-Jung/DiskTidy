@@ -1,17 +1,17 @@
 import Foundation
 
 enum AndroidEmulatorScanner {
-    static var avdRoot: URL {
+    static var defaultAVDRoot: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".android/avd")
     }
 
     /// AVD 디렉터리와 짝을 이루는 `<name>.ini` 포인터 파일. 디렉터리만 지우면
     /// Android Studio가 유령 항목을 계속 보여주므로 함께 정리한다.
-    static func iniURL(forAVDNamed name: String) -> URL {
+    static func iniURL(forAVDNamed name: String, in avdRoot: URL = defaultAVDRoot) -> URL {
         avdRoot.appendingPathComponent("\(name).ini")
     }
 
-    static func scan() -> [CleanableItem] {
+    static func scan(avdRoot: URL = defaultAVDRoot) -> [CleanableItem] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: avdRoot, includingPropertiesForKeys: [.isDirectoryKey]
         ) else { return [] }

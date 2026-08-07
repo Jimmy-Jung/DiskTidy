@@ -1,9 +1,7 @@
 import Foundation
 
 enum AndroidCacheScanner {
-    static func scan() -> [CleanableItem] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-
+    static func scan(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [CleanableItem] {
         var labeled: [(name: String, url: URL)] = [
             ("Gradle 캐시", home.appendingPathComponent(".gradle/caches")),
             ("Gradle 배포판", home.appendingPathComponent(".gradle/wrapper/dists")),
