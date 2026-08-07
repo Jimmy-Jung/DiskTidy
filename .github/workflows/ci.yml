@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Test
+        run: swift test
+
+      - name: Fail on compiler warnings
+        run: |
+          rm -rf .build
+          swift build -c debug 2>&1 | tee build.log
+          if grep -q "warning:" build.log; then
+            echo "::error::컴파일 경고가 있습니다"
+            grep "warning:" build.log
+            exit 1
+          fi

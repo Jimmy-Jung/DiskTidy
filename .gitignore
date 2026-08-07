@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+.DS_Store
+DiskTidy.app
+Resources/AppIcon.iconset/
