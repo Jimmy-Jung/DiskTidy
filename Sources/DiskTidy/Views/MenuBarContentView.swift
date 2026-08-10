@@ -20,7 +20,7 @@ struct MenuBarContentView: View {
 
             Button("앱 열기") {
                 openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
+                WindowPresenter.present(alwaysOnTop: WindowPresenter.isAlwaysOnTopEnabled)
             }
             .buttonStyle(.plain)
 
