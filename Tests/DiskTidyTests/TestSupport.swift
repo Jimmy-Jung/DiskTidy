@@ -7,12 +7,36 @@ import Foundation
 /// 스캐너는 실제 파일시스템을 훑으므로 픽스처도 진짜 디렉터리여야 한다.
 /// 스위트 인스턴스가 사라질 때 통째로 지워 테스트 간 잔여물을 남기지 않는다.
 final class TempDirectory {
+    private static let namePrefix = "DiskTidyTests-"
+
     let url: URL
 
+    /// 회수는 프로세스당 한 번이면 충분하다. 인스턴스마다 돌리면 잔여물이 많이 쌓였을 때
+    /// (변이 검사처럼 테스트를 수십 번 돌린 뒤) 첫 생성이 수 초를 먹고,
+    /// 대기 시간이 있는 테스트가 그 때문에 흔들린다.
+    private static let sweepOnce: Void = sweepStaleFixtures()
+
     init() throws {
+        _ = Self.sweepOnce
         url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("DiskTidyTests-\(UUID().uuidString)")
+            .appendingPathComponent("\(Self.namePrefix)\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    /// `deinit`은 병렬 스위트에서 도는 것이 보장되지 않아 실행마다 픽스처가 쌓인다.
+    /// 그냥 두면 `$TMPDIR`은 임시파일 탭의 실제 삭제 루트라, 3일 뒤 이 잔여물이
+    /// 사용자 화면의 삭제 후보로 올라온다. 시작할 때 자기 것만 걷는다.
+    static func sweepStaleFixtures() {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        let cutoff = Date().addingTimeInterval(-3600)
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        where name.hasPrefix(namePrefix) {
+            let stale = root.appendingPathComponent(name)
+            let modified = (try? stale.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            // 같이 돌고 있는 다른 테스트의 픽스처를 지우면 안 된다. 1시간 여유를 둔다.
+            if modified < cutoff { try? FileManager.default.removeItem(at: stale) }
+        }
     }
 
     deinit {
