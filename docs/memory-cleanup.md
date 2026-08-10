@@ -3,7 +3,7 @@
 - 작성자: JunyoungJung
 - 작성일: 2026-08-07
 - 대상 버전: DiskTidy 1.2.0 (현재 `Info.plist` 1.0.1, 임시파일 정리 1.1.0 다음 릴리스)
-- 상태: 설계 보강 완료, 구현 대기
+- 상태: 구현 완료 (2026-08-10). 4절 `JavaMainClassParser`의 허용 옵션 목록은 실측에 맞춰 확장했다 — 최종 구현은 `Sources/DiskTidy/Models/RunningProcess.swift` 참조
 - 관련 문서: [temp-cleanup.md](temp-cleanup.md) — 독립 기능이지만 위험도가 낮아 그쪽을 먼저 넣는다
 
 ---
@@ -240,6 +240,11 @@ struct RunningProcess: Identifiable, Hashable {
 enum JavaMainClassParser {
     /// Gradle/Kotlin 데몬에서 확인한 launcher option만 허용한다.
     /// 알 수 없는 option은 main class로 추측하지 않고 nil을 반환한다.
+    ///
+    /// **구현 시 실측 보정**: Gradle 8.13은 `--add-opens=…`·`--add-exports=…`·`-javaagent:…`를,
+    /// Kotlin 2.2.21 데몬은 `--add-exports`를 **분리형**으로 쓰고 `-ea`·`-XX:…`도 낀다.
+    /// 아래 목록만으로는 두 데몬 모두 nil이 되어 종료 후보가 하나도 생기지 않는다.
+    /// 실제 허용 목록은 `Sources/DiskTidy/Models/RunningProcess.swift`에 있다.
     private static let optionsWithValue: Set<String> = [
         "-cp", "-classpath", "--class-path"
     ]

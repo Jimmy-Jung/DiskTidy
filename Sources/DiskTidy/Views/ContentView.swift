@@ -15,8 +15,8 @@ private let sidebarItems: [SidebarItem] = [
     SidebarItem(id: 5, title: "대용량 파일", systemImage: "doc.badge.arrow.up"),
     SidebarItem(id: 6, title: "Android 캐시", systemImage: "shippingbox"),
     SidebarItem(id: 7, title: "Android 에뮬레이터", systemImage: "display"),
-    // 개발 데몬 정리 탭은 다음 ID인 9를 쓴다. 두 기능을 병렬 구현해도 충돌하지 않는다.
     SidebarItem(id: 8, title: "임시파일", systemImage: "clock.badge.xmark"),
+    SidebarItem(id: 9, title: "개발 데몬", systemImage: "memorychip"),
 ]
 
 struct ContentView: View {
@@ -47,6 +47,7 @@ struct ContentView: View {
         case 6: AndroidCacheTabView()
         case 7: AndroidEmulatorTabView()
         case 8: TempTabView()
+        case 9: MemoryTabView()
         default: StorageTabView()
         }
     }
