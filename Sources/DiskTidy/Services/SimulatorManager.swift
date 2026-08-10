@@ -89,4 +89,10 @@ enum SimulatorManager {
     static func eraseDevice(_ udid: String) -> Bool {
         ShellRunner.runXcrun(["simctl", "erase", udid]).succeeded
     }
+
+    /// 부팅된 기기를 모두 종료한다. 기기·앱의 영구 데이터는 남지만 실행 중인 앱의
+    /// 미저장 상태와 진행 중인 테스트/빌드는 끊긴다. 반드시 확인을 받은 뒤 호출한다.
+    static func shutdownAll() -> Bool {
+        ShellRunner.runXcrun(["simctl", "shutdown", "all"]).succeeded
+    }
 }

@@ -12,15 +12,18 @@ final class SimulatorViewModel: ObservableObject {
     private let list: @Sendable () -> [SimulatorItem]
     private let delete: @Sendable (String) -> Bool
     private let erase: @Sendable (String) -> Bool
+    private let shutdownAllDevices: @Sendable () -> Bool
 
     init(
         list: @escaping @Sendable () -> [SimulatorItem] = { SimulatorManager.listDevices() },
         delete: @escaping @Sendable (String) -> Bool = { SimulatorManager.deleteDevice($0) },
-        erase: @escaping @Sendable (String) -> Bool = { SimulatorManager.eraseDevice($0) }
+        erase: @escaping @Sendable (String) -> Bool = { SimulatorManager.eraseDevice($0) },
+        shutdownAll: @escaping @Sendable () -> Bool = { SimulatorManager.shutdownAll() }
     ) {
         self.list = list
         self.delete = delete
         self.erase = erase
+        shutdownAllDevices = shutdownAll
     }
 
     var selectedItems: [SimulatorItem] { items.filter(\.isSelected) }
@@ -47,6 +50,29 @@ final class SimulatorViewModel: ObservableObject {
 
     func selectAll(_ isSelected: Bool) {
         for index in items.indices { items[index].isSelected = isSelected }
+    }
+
+    /// 부팅된 시뮬레이터를 모두 종료한다. 확인 다이얼로그를 거친 뒤에만 호출한다.
+    /// `xcrun`은 수 초가 걸릴 수 있어 메인 액터 밖에서 실행한다.
+    func shutdownAll() {
+        guard !isBusy else { return }
+        isBusy = true
+        errorMessage = nil
+
+        let shutdownAllDevices = self.shutdownAllDevices
+        Task {
+            let succeeded = await Task.detached(priority: .userInitiated) {
+                shutdownAllDevices()
+            }.value
+
+            isBusy = false
+            errorMessage = Self.shutdownFailureMessage(succeeded: succeeded)
+            refresh()
+        }
+    }
+
+    nonisolated static func shutdownFailureMessage(succeeded: Bool) -> String? {
+        succeeded ? nil : "시뮬레이터를 종료하지 못했습니다. Xcode 명령줄 도구 설정을 확인하세요."
     }
 
     /// simctl은 부팅 중인 기기 등에서 실패한다. 종료 코드를 확인하지 않으면

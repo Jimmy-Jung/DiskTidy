@@ -4,6 +4,7 @@ struct SimulatorTabView: View {
     @StateObject private var viewModel = SimulatorViewModel()
     @State private var showDeleteConfirm = false
     @State private var showEraseConfirm = false
+    @State private var showShutdownConfirm = false
 
     private var selectedCount: Int { viewModel.selectedItems.count }
     private var isWorking: Bool { viewModel.isScanning || viewModel.isBusy }
@@ -52,6 +53,9 @@ struct SimulatorTabView: View {
             HStack {
                 Button("전체 선택") { viewModel.selectAll(true) }
                 Button("전체 해제") { viewModel.selectAll(false) }
+                // 선택과 무관하게 부팅된 기기 전체가 대상이라 선택 개수로 비활성하지 않는다.
+                Button("모두 종료") { showShutdownConfirm = true }
+                    .disabled(isWorking)
                 Spacer()
                 Text("선택: \(selectedCount)개, \(ByteCountFormatter.string(fromByteCount: viewModel.selectedBytes, countStyle: .file))")
                     .foregroundStyle(.secondary)
@@ -80,6 +84,15 @@ struct SimulatorTabView: View {
             titleVisibility: .visible
         ) {
             Button("초기화", role: .destructive) { viewModel.eraseSelected() }
+            Button("취소", role: .cancel) {}
+        }
+        // 기기 데이터는 남지만 실행 중인 앱의 미저장 상태와 테스트는 끊긴다.
+        .confirmationDialog(
+            "모든 시뮬레이터를 종료합니다. 기기 데이터는 유지되지만 실행 중인 작업은 중단됩니다.",
+            isPresented: $showShutdownConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("모두 종료", role: .destructive) { viewModel.shutdownAll() }
             Button("취소", role: .cancel) {}
         }
     }
