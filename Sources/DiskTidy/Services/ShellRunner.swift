@@ -30,7 +30,10 @@ enum ShellRunner {
         let data = outPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         return ShellResult(
-            output: String(data: data, encoding: .utf8) ?? "",
+            // `String(data:encoding:)`는 비UTF8 바이트가 하나만 섞여도 nil이다. 그러면
+            // exFAT·SMB 볼륨의 파일명 하나 때문에 `lsof`·`du` 출력 전체가 사라진다.
+            // 손상된 바이트만 치환문자로 바꾸고 나머지 줄은 살린다.
+            output: String(decoding: data, as: UTF8.self),
             exitCode: process.terminationStatus
         )
     }
