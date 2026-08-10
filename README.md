@@ -22,7 +22,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 
 ## 기능
 
-좌측 사이드바로 이동하는 8개 화면 + 메뉴바 상시 표시.
+좌측 사이드바로 이동하는 9개 화면 + 메뉴바 상시 표시.
 
 | 화면 | 내용 |
 |---|---|
@@ -34,6 +34,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | 대용량 파일 | 사용자가 고른 폴더에서 200MB 이상 파일 탐색 (기본값 `~/Downloads`) |
 | Android 캐시 | Gradle 캐시/배포판, `~/.android` 캐시, Android Studio IDE 캐시 |
 | Android 에뮬레이터 | `~/.android/avd`의 AVD 목록, 삭제 시 `.ini` 포인터까지 정리 |
+| 임시파일 | `/private/tmp` · `$TMPDIR`의 최상위 항목 (안전 규칙과 관측 한계는 아래) |
 
 메뉴바 아이콘은 SSD 사용률(%)을 60초마다 갱신해 상시 표시하고, 클릭하면 게이지 + 앱 열기/종료만 뜨는 최소 드롭다운을 보여준다.
 
@@ -51,10 +52,40 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 
 `build` · `dist` · `target`은 커밋된 소스 디렉터리일 수 있어서 마커 없이는 건드리지 않는다. 스캔 루트로 `/` `~` `/Users` 등 지나치게 넓은 경로는 선택할 수 없다.
 
+## 임시파일 안전 규칙
+
+`/tmp`은 공용 디렉터리다. 최상위에 유닉스 소켓·타 사용자 소유 파일·아직 쓰이는 마커가 섞여 있어서, 항목 하나를 후보로 올리려면 아래 5개를 **모두** 통과해야 한다. 하나라도 판정할 수 없으면 후보에서 뺀다.
+
+| # | 규칙 |
+|---|---|
+| 1 | 소유자가 나 (`st_uid == getuid()`) |
+| 2 | 정규 파일 또는 디렉터리 — 소켓·FIFO·심볼릭 링크 제외 |
+| 3 | `atime`과 `mtime`이 **둘 다** 3일 초과 |
+| 4 | `lsof` 스냅샷에 열린 경로로 잡히지 않음 |
+| 5 | 루트 디렉터리 자체가 아님 |
+
+디렉터리는 자신뿐 아니라 **하위 트리 전체**가 규칙 1~4를 통과해야 한다. 안에 소켓 하나, 열린 파일 하나만 있어도 디렉터리째 후보에서 빠진다.
+
+여기에 세 가지를 더 막는다.
+
+- **마운트 경계를 넘지 않는다.** 후보와 하위 항목의 `st_dev`가 루트와 같아야 한다. 마운트 포인트를 품은 디렉터리는 이동이 성공하므로, 막지 않으면 재귀 삭제가 마운트된 볼륨 내용까지 지운다.
+- **쓰기 권한 없는 디렉터리는 후보가 아니다.** `0555` 디렉터리는 열거만 되고 자식 삭제는 실패한다. 삭제는 원자적이지 않아 일부만 지운 채 멈추고, 그 시점에 복원까지 막힌다.
+- **하위 트리 깊이 상한은 64.** 넘으면 판정 불가로 보고 제외한다.
+
+### 관측 한계
+
+- **`lsof`는 root·다른 사용자 프로세스의 파일 핸들을 완전하게 보지 못한다.** 그 프로세스가 붙잡고 있는 파일은 "열려 있지 않음"으로 보일 수 있다.
+- **`atime`은 최근 읽기를 증명하지 못한다.** 파일시스템의 갱신 정책에 따라 갱신되지 않을 수 있어서, 사용 중 증명으로 취급하지 않고 보조 조건으로만 쓴다.
+- 즉 이 기능은 **사용자 공간에서 관찰 가능한 상태만 보수적으로** 거른다. 위협 모델에 같은 UID의 적대 프로세스는 포함하지 않는다.
+- **App Sandbox / Mac App Store 배포는 지원하지 않는다.** entitlement 없는 직접 배포 앱을 전제로 `/private/tmp`에 접근한다.
+- `lsof` 실행이나 루트 열거에 실패하면 빈 목록이 아니라 **오류**로 처리한다. 목록을 비우고 경고 배너를 띄워서, 검증되지 않은 항목에 삭제 버튼이 열리지 않게 한다.
+
 ## 삭제 정책
 
 - 캐시데이터 · 프로젝트 캐시 · Xcode 캐시 · 대용량 파일 · Android 캐시 · Android 에뮬레이터: **휴지통으로 이동** (`FileManager.trashItem`) — 복구 가능.
 - 시뮬레이터 기기 삭제/초기화: `xcrun simctl delete` / `erase` — 되돌릴 수 없어서 실행 전 확인 다이얼로그를 띄운다.
+- **임시파일: 완전 삭제** — 휴지통을 거치면 사용자가 비우기 전까지 디스크 블록이 회수되지 않아서 tmp 탭에는 맞지 않는다. 되돌릴 수 없으므로 확인 다이얼로그를 반드시 거친다. 삭제 절차는 스캔 시점의 `st_dev + st_ino + uid + mode + mtime + atime`을 보존했다가, 삭제 직전 부모 디렉터리 FD 기준으로 같은 파일인지 다시 확인하고 → 같은 볼륨 안의 전용 격리 디렉터리로 `renameatx_np(RENAME_EXCL)` 원자 이동 → 격리 위치에서 동일성이 유지될 때만 지운다. 도중에 앱이 죽으면 격리 항목이 다음 실행의 **복구 대기 목록**에 뜨고, 자동으로 지우지 않는다.
+- 삭제 성공은 "경로를 삭제했다"는 뜻이다. APFS 스냅샷이나 열린 파일 때문에 여유 용량 증가가 지연될 수 있어서, 화면은 삭제한 경로 수와 새로 읽은 여유 용량을 **따로** 보여 주고 회수량을 약속하지 않는다.
 - 삭제 실패(권한 부족, 사용 중인 파일, 부팅 중인 시뮬레이터)는 화면에 경고 배너로 보고하고 목록에서 지우지 않는다. 상세 원인은 Console.app에서 `com.jimmy.disktidy` 로그로 확인한다.
 
 ## 요구사항
@@ -124,7 +155,7 @@ codesign -dv --verbose=4 /Applications/DiskTidy.app
 
 빌드마다 ad-hoc 서명이 새로 생성되므로, 재설치 후 macOS가 폴더 접근 권한(TCC)을 다시 물어볼 수 있다.
 
-**포크한다면:** `Info.plist`의 `CFBundleIdentifier`(`com.jimmy.disktidy`)와 `TrashService`의 로거 subsystem을 본인 것으로 바꿀 것. 공증까지 하려면 Apple Developer Program($99/년) 가입 후 `codesign --options runtime --sign "Developer ID Application: ..."` + `xcrun notarytool submit`이 필요하다.
+**포크한다면:** `Info.plist`의 `CFBundleIdentifier`(`com.jimmy.disktidy`)와 `TrashService`·`PermanentDeleter`·`TempCleanupViewModel`의 로거 subsystem을 본인 것으로 바꿀 것. 공증까지 하려면 Apple Developer Program($99/년) 가입 후 `codesign --options runtime --sign "Developer ID Application: ..."` + `xcrun notarytool submit`이 필요하다.
 
 ## 앱 아이콘 재생성
 
@@ -161,11 +192,13 @@ DiskTidy/
   dist/                    # DMG 산출물 (git 제외)
   Sources/DiskTidy/
     DiskTidyApp.swift      # @main, WindowGroup + MenuBarExtra
-    Models/                # CleanableItem, SimulatorItem, StorageSnapshot, AppNavigationState
+    Models/                # CleanableItem, TempCandidate, SimulatorItem, StorageSnapshot,
+                           #   AppNavigationState
     Services/              # 스캐너 + 공용 헬퍼(ShellRunner, DiskScanner, TrashService,
                            #   RootFolderStore, FileAttributes, StorageInfo, StorageMonitor)
+                           #   + 임시파일 전용(TempRootPolicy, TempScanner, PermanentDeleter)
     ViewModels/            # CleanableListViewModel(전 캐시 탭 공용), SimulatorViewModel,
-                           #   RootFolderViewModel
+                           #   RootFolderViewModel, TempCleanupViewModel
     Views/                 # ContentView(사이드바) + 화면별 탭 뷰 +
                            #   공용 컴포넌트(CleanableListView, RootFolderPicker, ErrorBanner)
   Tests/DiskTidyTests/     # Swift Testing
@@ -176,6 +209,9 @@ DiskTidy/
 - **`ShellRunner`는 stderr를 `FileHandle.nullDevice`로 버린다.** `Pipe`로 두면 자식이 파이프 버퍼(64KB)를 채운 순간 write에서 블록되고 부모는 stdout 읽기에서 영구 대기한다. `find`의 `Permission denied` 출력만으로도 넘는 양이라 실제로 앱이 멈췄다. 회귀 테스트 있음.
 - **`DiskScanner.sizes(of:)`는 `du -sk`에 경로를 묶어 넘긴다.** 엔트리마다 프로세스를 띄우면 `~/Library/Caches`(100개 이상)에서만 100번 넘게 fork/exec 한다.
 - **캐시 탭 6개가 `CleanableListViewModel` 하나를 공유한다.** 스캐너 클로저만 주입한다. 스캔·삭제는 모두 백그라운드에서 돌고, 새로고침 재진입은 가드로 막는다.
+- **임시파일 탭만 `CleanableListViewModel`을 쓰지 않는다.** `CleanableItem`의 `id`는 `UUID()`라 스캔 시점의 파일 동일성을 보존하지 않는다. 되돌릴 수 없는 삭제에 쓰면 스캔과 삭제 사이에 이름이 바뀐 다른 파일을 지운다. 그래서 `TempCandidate`가 `lstat` 값을 그대로 들고 다니고, 전용 ViewModel·View를 따로 둔다.
+- **`lsof`는 스캔당 한 번만 부른다.** `lsof +D /private/tmp`는 트리를 전수 순회해서 못 쓴다. `lsof -w -n -F0n -u <uid>`로 사용자 프로세스 전체의 열린 경로를 NUL 종료 필드로 한 번에 받는다(실측 1.2초, 약 89,000 필드). 줄 단위로 파싱하면 줄바꿈이 든 파일명에서 필드가 깨진다.
+- **스캔과 삭제가 같은 루트 정책(`TempRootPolicy.production`)을 쓴다.** 둘이 다른 판정을 하면 안전 규칙이 통째로 무너지므로, UI·삭제 호출부에는 루트를 받는 API를 아예 만들지 않았다.
 
 ## 기여
 

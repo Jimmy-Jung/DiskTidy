@@ -3,7 +3,48 @@
 - 작성자: JunyoungJung
 - 작성일: 2026-08-07
 - 대상 버전: DiskTidy 1.1.0 (현재 `Info.plist` 1.0.1에서 다음 기능 릴리스)
-- 상태: 설계 보강 완료, 구현 대기
+- 상태: **구현 완료** (2026-08-10). 5절 API·격리 이동 프로토콜·복구 목록까지 전부 구현하고 실기 검증했다.
+
+> **구현 후 메모 (2026-08-10)**
+>
+> - `renameatx_np` / `RENAME_EXCL`은 현 Xcode(macOS 26 SDK)에서 Swift에 그대로 노출된다. `EEXIST`로 목적지 덮어쓰기를 막는 것까지 테스트로 고정했다.
+> - 실기 검증: `/private/tmp` 최상위 30개(실제 소켓 10개·타 UID 6개 포함)에서 합성 픽스처로 규칙 5개를 확인했다. 열린 파일을 품은 디렉터리·FIFO를 품은 디렉터리·최근 파일·유닉스 소켓 모두 후보에서 빠졌고, 안전한 디렉터리만 삭제됐다(여유 용량 +2,002,944 B = 픽스처 2MB). sticky bit 디렉터리 밖으로의 격리 이동도 실기에서 동작한다.
+> - `delete()`는 후보 경로에 `/tmp`→`/private/tmp` **표기 정규화**를 적용한다. 정규화하지 않으면 루트 밖으로 오판할 뿐 아니라, 부모가 심볼릭 링크라 `O_NOFOLLOW` 열기가 `ELOOP`로 실패한다. 최종 대상에 `resolvingSymlinksInPath()`를 거는 것과는 다르다.
+> - 격리 디렉터리 준비는 `lstat`→`mkdir` 사이 경합을 견딘다. `EEXIST`를 성공으로 보되 소유자·0700 확인은 그대로 남긴다.
+> - **4절 2~3단계의 경합 구간도 테스트로 고정했다.** 실제 경합은 재현할 수 없으므로, 이동이 끝난 직후·identity 재확인 **직전**에 훅을 걸어 결정적으로 만들었다(`PermanentDeleter.StageHooks` — 기본값이 곧 production 동작이고 `delete(_:)` 표면은 그대로다). 고정한 경로 4개: ① 격리 항목이 다른 파일로 바뀜 → 새 항목을 지우지 않고 되돌림 ② 되돌릴 원래 이름이 이미 채워짐 → 덮어쓰지 않고 격리 보존 ③ 격리 항목이 사라짐 → 복구 목록에 노출 후 걷힘 ④ stage 이름 충돌 → 기존 격리 항목 무변경 + 새 이름 재시도 + 버려진 준비 레코드 정리.
+>   - **변이 검사로 비어 있지 않음을 확인했다.** 이동 후 identity 검사를 `guard true`로 무력화하니 갈아치운 파일이 실제로 삭제됐고(`.deleted`, 원본 경로 소멸), `renameatx_np(RENAME_EXCL)`을 plain `renameat`으로 바꾸니 복구 대기 중이던 기존 격리 항목이 덮어써졌다. 두 테스트 모두 그 자리에서 실패한다.
+>
+> **변이 검사 (2026-08-10)** — 안전 가드를 하나씩 무력화하고 전체 테스트를 돌려, 어느 테스트도 잡지 못하는 가드를 찾았다. **최종 30개 중 28개가 잡힌다.** 처음 놓친 것들의 원인은 셋으로 갈렸다.
+>
+> - **테스트가 진짜 가짜였던 것 5개** — 보강해 전부 잡히게 했다.
+>   - `scan()`의 `st_dev` 대조: 처음엔 내용이 든 볼륨을 붙여 검증했는데, 그러면 하위 트리 검증이 device 불일치로 **먼저** 잡아 스캔 단계 가드가 중복이 된다. **빈 볼륨**을 붙여야 이 가드만 남는다.
+>   - `delete()`의 부모 device 대조: 같은 마운트 테스트에서 후보를 손으로 만들어 넘기면 `.refused(.unsafeTree)`다.
+>   - `TempRootPolicy.validated`의 `/`·홈 거부: 현 후보 목록(`/private/tmp`, `$TMPDIR`)으로는 도달하지 않는 방어라, 함수를 internal로 열어 직접 검증한다.
+>   - journal의 `..` 차단: 기존 테스트가 `../../../../Users/somebody`를 썼는데 그 경로가 **존재하지 않아** 가드가 없어도 `open`이 실패해 같은 결과가 나왔다. 존재하고 쓸 수 있는 상위 경로(`..`)로 바꾸니 가드 없이는 파일이 루트 밖으로 나간다.
+>   - `TempCandidate.ID` 충돌: 서로 다른 두 파일로 비교하면 inode가 달라 무조건 통과했다. identity를 똑같이 두고 경로만 달리해야 실제 계약을 검증한다.
+> - **내 근거가 틀렸던 것 1개** — `DiskScanner`의 `du` 인자. `--`를 넣으며 "`-`로 시작하는 이름이 옵션으로 먹힌다"고 했지만, 호출부는 **항상 절대 경로**를 넘기므로 도달할 수 없는 상황이었다. 함께 넣었던 `-x`도 어떤 테스트로도 검증되지 않고 기존 6개 탭의 동작을 근거 없이 바꾸므로, `DiskScanner`는 원래대로 되돌렸다.
+> - **원리상 테스트할 수 없는 것 2개** — 방어는 유지하고 `isUsableDirectory` 주석에 이유를 적었다.
+>   - 격리 디렉터리 `st_uid == getuid()`: 타 UID 소유 디렉터리를 만들려면 root 권한이 필요하다.
+>   - `fchmodat(AT_SYMLINK_NOFOLLOW)`: 링크가 미리 있으면 `lstat`이 성공해 `S_IFLNK`로 걸러지므로 chmod 분기에 도달하지 않는다. `chmod`와의 차이는 `lstat` 실패 직후 링크가 끼어드는 경합에서만 드러난다.
+>
+> 검사 중 타이밍 의존 테스트도 하나 드러났다. 복구 목록이 스캔보다 먼저 뜨는지 확인하는 테스트가 0.2초 지연에 기대고 있어 부하 상태에서 8회 중 1~3회 실패했다. 세마포어로 스캔을 붙잡는 방식으로 바꿔 8회 연속 통과를 확인했다.
+> - **`identity`에 든 `atime`과 우리 자신의 읽기**: 스캔의 `du -sk`와 삭제 직전 하위 트리 재검증이 디렉터리를 읽는다. APFS 실측 결과, 방금 만든 디렉터리(inode가 이미 dirty)는 `du` 후 atime이 갱신되지만 10일 전 타임스탬프를 가진 디렉터리는 `du`·`ls` 후에도 갱신되지 않는다. 후보는 규칙 3 때문에 **항상 atime이 3일 초과인 cold inode**뿐이라 이 경합은 구조적으로 자기 제한된다. 그래도 갱신이 일어나면 결과는 `.refused(.identityChanged)` 거부이지 삭제 사고가 아니며, 다시 스캔하면 해소된다. 그래서 identity에서 atime을 빼지 않았다.
+>   - 이 때문에 `scan()`은 규칙 판정과 identity 캡처를 **모두 끝낸 뒤에** `du`를 부른다. 순서가 뒤집히면 자기 `du`가 갱신한 atime을 보고 모든 디렉터리가 `.tooRecent`로 빠진다.
+> **리뷰 후 보강 (2026-08-10)** — 6개 관점 병렬 리뷰 + 적대적 검증에서 확정된 결함을 전부 반영했다. 실측으로 재확인한 것만 적는다.
+>
+> - **극단 타임스탬프로 앱이 죽는 경로를 막았다.** `utimes(path, -9223372037)`이 성공하고 APFS가 그 값을 그대로 저장한다. `seconds * 1_000_000_000`이 Int64를 넘어 Swift가 트랩하므로, `/private/tmp`(1777)에 그런 파일 하나만 있으면 탭을 여는 것만으로 프로세스가 죽고 앱 안에서 빠져나갈 수 없었다. 표현 범위 밖은 판정 불가로 보고 후보에서 뺀다. `minimumAgeDays`에도 상한(100,000일)을 뒀다.
+> - **마운트 경계를 넘지 않는다.** 최상위 엔트리가 마운트 포인트면 `renameatx_np`가 `EXDEV`로 막히지만, 마운트를 **품은** 디렉터리는 `rc=0`으로 이동에 성공한다(실측). 그 상태로 재귀 삭제하면 남의 볼륨 내용을 지운다. 후보·하위 항목·삭제 직전 재검증 전부 루트 `st_dev`와 대조하고, `du`에도 `-x`를 붙였다. 실기 재확인: 8MB 볼륨을 `/private/tmp/<dir>/mnt`에 붙여도 `<dir>`이 후보에 오르지 않는다.
+> - **쓰기 권한 없는 디렉터리를 후보에서 뺐다.** `0555` 디렉터리가 섞인 트리에서 `removeItem`은 형제 파일 일부를 지운 뒤 멈춘다(실측: 6개 중 3개 삭제 후 실패). 그 시점에 mtime이 바뀌어 복원까지 막혔다.
+> - **경로 경계 비교를 UTF-8 바이트로 바꿨다.** `String.hasPrefix`는 grapheme cluster 단위라 `/private/tmp/` + U+0301에서 구분자가 다음 글자와 묶여 진짜 하위 경로가 "하위 아님"이 됐다(실측). 규칙 4가 그 경로에서 죽는 문제였다.
+> - **journal 레코드를 임시 파일 + `rename`으로 갈아 끼운다.** 살아 있는 레코드를 `O_TRUNC`로 자르면 그 틈에 전원이 나갔을 때 0바이트 레코드가 남아 원본 경로를 잃는다. 매체 커밋은 `F_FULLFSYNC`로 한다.
+> - **이동 후 트리 재검증의 `lsof` 스냅샷을 다시 찍는다.** 이동 전 스냅샷은 격리 경로와 접두사가 영영 일치하지 않아 마지막 관문에서 규칙 4가 통째로 죽어 있었다.
+> - **stage도 원본도 없는 `staged` 레코드를 걷는다.** 삭제 성공과 journal 정리 사이에 앱이 죽으면, 복원도 삭제도 안 되는 행이 영구히 남았다.
+> - **`mkdir` 경합에서 `chmod`가 심볼릭 링크를 따라가던 것**을 `fchmodat(..., AT_SYMLINK_NOFOLLOW)`로 바꿨다. `/private/tmp`은 1777이라 타 UID가 그 틈에 링크를 끼울 수 있다(실측: `mkdir errno=17` 뒤 대상 모드 644→700).
+> - **이미 사라진 대상은 `.deleted`로 본다.** `/tmp`은 macOS 주기 작업이 상시 정리한다. `.failed(ENOENT)`로 두면 목록에 남아 누를 때마다 "errno 2"가 반복됐다.
+> - **`ShellRunner`가 비UTF8 바이트에 출력 전체를 버리던 것**을 치환 디코딩으로 바꿨다. 파일명 하나 때문에 `lsof` 결과가 통째로 사라져 탭이 영구 정지했다.
+> - **ViewModel에 주입 seam을 뒀다**(기존 `CleanableListViewModel`과 같은 방식). 스캔 실패 시 목록 비움, 삭제 중 선택 변경, 격리 잔류 항목 이동, 복원이 스캔 배너를 지우지 않는 것까지 실제 파일시스템 없이 고정했다.
+>
+> - 이 문서 6절의 실측치(26GB / 688 엔트리)는 2026-08-07 기준이다. 2026-08-10 재부팅 후 같은 머신은 `/private/tmp` 364KB / 22 엔트리, 스캔 0.25초였다.
 
 ---
 
@@ -54,6 +95,14 @@ drwxrwxrwx  jimmy  .dotnet                         ← 툴체인 상태 디렉�
 | 3 | `atime`과 `mtime`이 **둘 다** N일 초과 (v1 기본 3일) | mtime만 보면 "한 번 쓰고 계속 읽는" 파일을 날린다 |
 | 4 | `lsof` 결과에 열린 경로로 잡히지 않음 | 오래됐지만 mmap/열려 있는 파일을 거른다 |
 | 5 | 루트 디렉터리 자체가 아님 | `/private/tmp`을 통째로 지우는 사고 방지 |
+
+추가로 세 가지를 더 막는다. 전부 구현 후 리뷰에서 실측으로 확인한 구멍이다.
+
+| 규칙 | 근거 |
+|---|---|
+| 후보와 하위 항목의 `st_dev`가 루트와 같아야 한다 | 마운트 포인트를 **품은** 디렉터리는 `renameatx_np`가 성공한다(실측). 그대로 두면 격리로 옮겨진 뒤 재귀 삭제가 마운트된 볼륨 내용까지 지운다. 최상위가 마운트 포인트인 경우만은 `EXDEV`로 막힌다 |
+| 디렉터리는 소유자 쓰기 권한(`S_IWUSR`)이 있어야 한다 | `0555` 디렉터리는 열거만 되고 자식 unlink는 `EACCES`다. `removeItem`은 원자적이지 않아 형제 파일 일부를 지운 뒤 멈추고, 그 시점에 mtime이 바뀌어 identity 대조가 복원까지 막는다 |
+| 하위 트리 깊이는 64를 넘지 않아야 한다 | 넘으면 판정 불가로 보고 후보에서 제외한다 (`TempScanner.maximumTreeDepth`) |
 
 ### 디렉터리는 하위 트리까지 검증한다
 
@@ -131,7 +180,10 @@ static func openPaths() throws -> Set<String>
 1. 각 production root 안에 mode `0700`의 DiskTidy 전용 격리 디렉터리와 durable journal을 만들고 directory FD를 연다. journal에는 root-relative source parent/name, candidate identity, stage name, 상태를 기록한다. 이동 전 journal의 준비 레코드를 `fsync`하고, 스캐너는 격리 디렉터리를 일반 후보에서 제외한다.
 2. candidate의 parent FD와 final component를 다시 검증한 뒤 `renameatx_np(sourceParentFD, name, quarantineFD, randomName, RENAME_EXCL)`으로 **같은 볼륨 안에서** 원자 이동한다. randomName이 이미 있으면 새 이름으로 제한 횟수 재시도하고, 그 외 오류·`EXDEV`에는 복사/삭제 fallback 없이 실패한다. plain `renameat`은 목적지를 덮어쓸 수 있으므로 쓰지 않는다.
 3. 격리 위치에서 `fstatat(..., AT_SYMLINK_NOFOLLOW)`한 identity가 candidate와 다르면 어떤 삭제도 하지 않는다. 복원도 `renameatx_np(quarantineFD, stageName, sourceParentFD, name, RENAME_EXCL)`만 사용한다. 원래 이름이 이미 있으면 덮어쓰지 않고 격리 항목을 보존한 채 `.refused(.quarantineRecoveryRequired)`와 복구 경로를 표시한다.
-4. 이동이 성공하면 journal을 staged 상태로 durable하게 기록한다. identity가 같을 때만 격리 FD 기준으로 하위 트리를 다시 검증하고 삭제한다. 성공 삭제 뒤에만 journal을 완료 상태로 기록한다.
+4. 이동이 성공하면 journal을 staged 상태로 durable하게 기록한다. identity가 같을 때만 하위 트리를 다시 검증하고 삭제한다. 성공 삭제 뒤에만 journal을 완료 상태로 기록한다.
+   - 격리 FD는 identity 확인(`fstatat`)과 `renameatx_np`에만 쓴다. 실제 재귀 삭제는 격리 경로 문자열을 다시 해석한다 — FD 기준 재귀 unlink는 얻는 것 대비 코드가 너무 크고, 격리 디렉터리가 `0700`·우리 소유이며 stage 이름이 갓 만든 UUID라 노출 면이 없다.
+   - 재검증에 쓰는 `lsof` 스냅샷은 **격리 경로 기준으로 다시 찍는다**. 이동 전 스냅샷은 `<root>/<name>/…` 형태라 `<root>/.DiskTidyQuarantine/<uuid>/…`와 접두사가 영영 일치하지 않아 규칙 4가 통째로 죽는다.
+   - journal 레코드는 임시 파일에 쓰고 `rename`으로 갈아 끼운다. 살아 있는 레코드를 `O_TRUNC`로 제자리에서 자르면 전원 손실이 그 틈에 끼었을 때 0바이트 레코드가 남아 원본 경로를 잃는다. 매체 커밋은 `fsync(2)`가 아니라 `F_FULLFSYNC`로 보장한다.
 5. 앱 시작 시 일반 tmp 스캔보다 먼저 journal과 격리 디렉터리를 대조한다. 준비·staged·손상·orphan 항목은 자동 삭제하지 않고 복구 화면에 보인다. 복원 직전에도 stage identity를 journal과 비교하고, 일치할 때만 `RENAME_EXCL`을 사용한다. 충돌·identity 불일치 항목은 Finder에서 열기와 원본/격리 경로만 제공한다.
 
 > **현재 확인**: 현 Xcode/macOS 환경에서 `renameatx_np`와 `RENAME_EXCL`은 `Darwin`에 노출된다. macOS 13/Intel에서 이동·목적지 충돌·복원 충돌 스모크 테스트를 추가한다.
@@ -209,7 +261,10 @@ enum TempScanner {
     }
 
     /// lsof 또는 루트 열거 실패는 빈 목록이 아니라 throw다.
-    static func scan() throws -> [TempCandidate]
+    /// `minimumAgeDays`는 internal 기본값 파라미터다. 상한(100,000일)을 넘거나 음수면
+    /// `.invalidMinimumAge`. UI는 이 값을 넘기지 않고, 삭제 경로는 무엇을 넘겼든
+    /// 항상 고정 3일로 다시 검증한다.
+    static func scan(minimumAgeDays: Int = defaultMinimumAgeDays) throws -> [TempCandidate]
 
     /// canonical path만 반환한다. exitCode != 0 또는 불완전한 파싱은 ScanError를 던진다.
     static func openPaths() throws -> Set<String>
