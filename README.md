@@ -22,7 +22,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 
 ## 기능
 
-좌측 사이드바로 이동하는 9개 화면 + 메뉴바 상시 표시.
+좌측 사이드바로 이동하는 11개 화면 + 메뉴바 상시 표시 + 우측 AI 도우미 패널.
 
 | 화면 | 내용 |
 |---|---|
@@ -35,8 +35,70 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | Android 캐시 | Gradle 캐시/배포판, `~/.android` 캐시, Android Studio IDE 캐시 |
 | Android 에뮬레이터 | `~/.android/avd`의 AVD 목록, 삭제 시 `.ini` 포인터까지 정리 |
 | 임시파일 | `/private/tmp` · `$TMPDIR`의 최상위 항목 (안전 규칙과 관측 한계는 아래) |
+| 개발 데몬 | 메모리·스왑 지표, 장기 실행 개발 데몬(Gradle · Kotlin) 종료 |
+| 설정 | AI Agent 제공자 연결 (제공자 · API 루트 URL · 모델 · API 키) |
 
 메뉴바 아이콘은 SSD 사용률(%)을 60초마다 갱신해 상시 표시하고, 클릭하면 게이지 + 앱 열기/종료만 뜨는 최소 드롭다운을 보여준다.
+
+## 창이 항상 위에 뜬다
+
+Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨으면 다시 찾을 방법이 없다. 그래서 창을 띄울 때 활성화·전면 배치·Space 이동을 함께 처리하고, 기본값으로 **항상 위에 표시**를 켠다. 설정 탭 → 창에서 끌 수 있다.
+
+활성화만으로는 부족하다는 것을 실측으로 확인했다. 다른 앱이 전체 화면이면 그 앱이 Space를 차지하고 창은 다른 Space에 남는다 — `lsappinfo`는 DiskTidy가 최전면이라고 답하고 `CGWindowList`에도 창이 화면 좌표 안에 있다고 나오는데, 스크린샷에는 전체 화면 편집기만 찍힌다. 그래서 창 레벨을 `.floating`으로 올리고 `canJoinAllSpaces` · `fullScreenAuxiliary`를 함께 준다(항상 위 끄면 `.normal` + `moveToActiveSpace`). 실행 직후에는 SwiftUI가 아직 창을 만들지 않았을 수 있어, 창이 생길 때까지 짧은 간격으로 몇 번 더 시도한다.
+
+## AI 도우미
+
+툴바의 말풍선 버튼으로 오른쪽 패널을 연다. **지금 보고 있는 탭의 화면 정보를 근거로** 대화한다 — 항목 수와 합계, 선택 상태, 목록 상위 40개, 스캔 상태, 오류 배너, 그 화면의 삭제 방식이 매 질문마다 새로 만들어져 프롬프트에 실린다. 스캔이 끝난 뒤 물어도 최신 목록으로 답하도록 값이 아니라 스냅샷 함수를 등록하는 구조다.
+
+| 제공자 | 기본 루트 | 형식 |
+|---|---|---|
+| Anthropic (Claude) | `https://api.anthropic.com` | Messages API |
+| OpenAI | `https://api.openai.com` | Chat Completions |
+| Ollama (로컬) | `http://localhost:11434` | Chat Completions 호환 |
+| OpenAI 호환 (직접 입력) | 사용자가 입력 | Chat Completions |
+
+버전 경로(`/v1/messages`, `/v1/chat/completions`)는 앱이 붙인다. 루트만 넣으면 되고 `/v1`이나 문서에서 복사한 전체 엔드포인트 경로를 붙여도 흡수한다.
+
+**모델은 드롭다운에서 고른다.** 설정 화면이 열릴 때 `GET /v1/models`로 목록을 받아 온다(두 와이어 포맷이 같은 응답 형식을 쓴다). 임베딩·음성·이미지·모더레이션 모델은 골라 봐야 실패하므로 목록에서 뺀다. 사내 게이트웨이나 프리뷰 모델처럼 목록에 없는 이름을 써야 하면 **직접 입력**을 켠다. 목록 조회는 모델 이름을 요구하지 않는다 — 이름을 몰라서 쓰는 기능이기 때문이다.
+
+**배포판은 API 키만 지원한다.** 구독 계정(Claude Pro/Max, ChatGPT Plus/Pro) 로그인을 배포판에 넣지 않았다. Anthropic은 서드파티 앱이 claude.ai 로그인을 제공하거나 Free/Pro/Max 자격증명으로 요청을 대행하는 것을 [명시적으로 금지](https://code.claude.com/docs/en/legal-and-compliance)하고 사전 통보 없이 차단할 수 있다고 밝히고 있으며, ChatGPT 구독도 API 사용량을 포함하지 않는다(별도 과금). 키 없이 쓰려면 Ollama 같은 로컬 제공자를 고른다.
+
+### 개발 빌드 전용: CLI 구독 로그인
+
+`swift build`(디버그) 빌드에서만 제공자 목록에 **"Claude Code CLI · 구독 로그인 (개발 빌드 전용)"** 이 나타난다. 본인 테스트용 경로다.
+
+동작은 단순하다. 이미 로그인된 공식 `claude` CLI를 그대로 실행하고 stdout을 답변으로 쓴다.
+
+```
+claude -p <대화 전문> --model sonnet --output-format text \
+       --append-system-prompt <화면 스냅샷 포함 시스템 프롬프트> \
+       --disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task Read Glob Grep \
+       --strict-mcp-config
+```
+
+**하지 않는 것**이 중요하다. 구독 OAuth 토큰을 읽지 않고, 헤더를 위장하지도 않는다. 그 방식은 제공자가 서버에서 차단하고 계정 정지 사유다. 여기서는 사용자가 터미널에서 직접 치는 명령을 같은 자격증명으로 실행할 뿐이며, 앱은 자격증명을 보지도 저장하지도 않는다.
+
+경계 세 개:
+
+- **도구를 전부 막는다.** 화면 스냅샷을 이미 프롬프트에 담아 넘기므로 도구가 필요 없고, 열어 두면 이 앱이 사용자 파일을 고치거나 명령을 실행하는 경로가 된다. `--strict-mcp-config`로 전역 MCP 서버도 끌어오지 않는다.
+- **작업 디렉터리는 `$TMPDIR`.** 실수로 파일을 건드려도 저장소가 아니다.
+- **180초 타임아웃.** 로그인이 만료된 CLI에 영구히 매달리지 않는다.
+
+준비: 터미널에서 `claude`를 한 번 실행해 로그인해 두고, 설정 탭의 **CLI 실행 파일 경로**에 `which claude` 결과를 넣는다(기본값은 `~/.local/bin/claude` 등 흔한 위치를 훑어 채운다 — GUI로 실행한 앱의 `PATH`는 `/usr/bin:/bin:/usr/sbin:/sbin`뿐이라 자동으로 찾지 못한다). 모델은 CLI 별칭(`sonnet` · `opus` · `haiku`) 드롭다운에서 고른다.
+
+한계: 조각 단위 스트리밍이 아니라 한 번에 받아 한 덩어리로 표시한다. CLI의 stream-json 형식은 도구마다 달라서, 필요해지면 도구별 파서를 붙인다.
+
+**보내지는 정보** — 질문할 때마다 그 화면의 **항목 이름·경로·용량·선택 상태**가 선택한 제공자의 서버로 전송된다. 파일 내용은 보내지 않는다. 밖으로 내보내고 싶지 않으면 Ollama 같은 로컬 제공자를 쓴다.
+
+**키 저장** — API 키는 macOS 키체인(`com.jimmy.disktidy.ai`)에 제공자별로 저장한다. `UserDefaults`에는 제공자·루트 URL·모델만 남는다. ad-hoc 서명 빌드는 빌드마다 서명 identity가 바뀌어 키체인 접근 권한을 다시 묻는다.
+
+**챗봇은 앱을 조작할 수 없다.** 도구 호출을 붙이지 않았다. 삭제·초기화·프로세스 종료는 전부 사용자가 직접 버튼을 눌러야 하고, 확인 다이얼로그도 그대로 거친다.
+
+원격 평문 `http`로는 요청을 보내지 않는다(키 노출). `http`는 루프백(`localhost` · `127.0.0.1` · `::1`)에만 허용하고, `*.local` LAN 주소는 **키가 필요 없는 로컬 제공자에만** 허용한다.
+
+답변은 마크다운으로 그린다. 모델이 실제로 쓰는 것(굵게·기울임·인라인 코드, 글머리표, 번호 목록, 제목, 코드 블록)만 해석하며, 인라인 서식은 Foundation의 `AttributedString(markdown:)`에 맡긴다. 스트리밍 중 도착하는 반쪽 문법(`**굵게`)이나 닫히지 않은 코드 블록에도 글자를 잃지 않는다. 사용자가 입력한 메시지는 원문 그대로 둔다 — 직접 적은 `*`가 서식으로 먹히면 원문이 바뀐 것처럼 보인다.
+
+답변은 1024 토큰에서 끊는다. 상한에 걸려 잘리면 답변 끝에 `(답변이 길이 제한으로 잘렸습니다.)`를 붙인다 — 잘린 답변을 완결된 답변으로 읽으면 안 되기 때문이다.
 
 ## 프로젝트 캐시 판정 규칙
 
@@ -193,14 +255,19 @@ DiskTidy/
   Sources/DiskTidy/
     DiskTidyApp.swift      # @main, WindowGroup + MenuBarExtra
     Models/                # CleanableItem, TempCandidate, SimulatorItem, StorageSnapshot,
-                           #   AppNavigationState
+                           #   AppNavigationState + AI(AIProvider, AIChatMessage,
+                           #   ScreenContext, ChatContextStore)
     Services/              # 스캐너 + 공용 헬퍼(ShellRunner, DiskScanner, TrashService,
                            #   RootFolderStore, FileAttributes, StorageInfo, StorageMonitor)
                            #   + 임시파일 전용(TempRootPolicy, TempScanner, PermanentDeleter)
+                           #   + AI(APIKeyStore, SettingsStore, AIRequestBuilder,
+                           #   AIStreamParser, AIChatClient, AIModelCatalog, AIChatError)
     ViewModels/            # CleanableListViewModel(전 캐시 탭 공용), SimulatorViewModel,
-                           #   RootFolderViewModel, TempCleanupViewModel
-    Views/                 # ContentView(사이드바) + 화면별 탭 뷰 +
+                           #   RootFolderViewModel, TempCleanupViewModel, MemoryViewModel,
+                           #   AISettingsViewModel, ChatViewModel, ScreenContextBuilder
+    Views/                 # ContentView(사이드바 + AI 패널 토글) + 화면별 탭 뷰 +
                            #   공용 컴포넌트(CleanableListView, RootFolderPicker, ErrorBanner)
+                           #   + AI(SettingsTabView, ChatPanelView, ScreenContextModifier)
   Tests/DiskTidyTests/     # Swift Testing
 ```
 
@@ -211,6 +278,8 @@ DiskTidy/
 - **캐시 탭 6개가 `CleanableListViewModel` 하나를 공유한다.** 스캐너 클로저만 주입한다. 스캔·삭제는 모두 백그라운드에서 돌고, 새로고침 재진입은 가드로 막는다.
 - **임시파일 탭만 `CleanableListViewModel`을 쓰지 않는다.** `CleanableItem`의 `id`는 `UUID()`라 스캔 시점의 파일 동일성을 보존하지 않는다. 되돌릴 수 없는 삭제에 쓰면 스캔과 삭제 사이에 이름이 바뀐 다른 파일을 지운다. 그래서 `TempCandidate`가 `lstat` 값을 그대로 들고 다니고, 전용 ViewModel·View를 따로 둔다.
 - **`lsof`는 스캔당 한 번만 부른다.** `lsof +D /private/tmp`는 트리를 전수 순회해서 못 쓴다. `lsof -w -n -F0n -u <uid>`로 사용자 프로세스 전체의 열린 경로를 NUL 종료 필드로 한 번에 받는다(실측 1.2초, 약 89,000 필드). 줄 단위로 파싱하면 줄바꿈이 든 파일명에서 필드가 깨진다.
+- **AI 화면 컨텍스트는 값이 아니라 클로저로 등록한다.** 탭이 `onAppear`에서 스냅샷 함수를 `ChatContextStore`에 넘기고, 챗봇은 메시지를 보내는 순간 그 함수를 부른다. 값으로 굳히면 26GB 트리 스캔이 끝난 뒤 질문해도 등록 시점의 빈 목록을 설명한다.
+- **제공자는 넷이지만 클라이언트는 하나다.** 실제 와이어 포맷은 Anthropic Messages와 OpenAI Chat Completions 둘뿐이라 `AIWireFormat`으로 갈라 요청 생성(`AIRequestBuilder`)과 SSE 해석(`AIStreamParser`)만 분기한다. 둘 다 순수 함수라 네트워크 없이 테스트한다.
 - **스캔과 삭제가 같은 루트 정책(`TempRootPolicy.production`)을 쓴다.** 둘이 다른 판정을 하면 안전 규칙이 통째로 무너지므로, UI·삭제 호출부에는 루트를 받는 API를 아예 만들지 않았다.
 
 ## 기여

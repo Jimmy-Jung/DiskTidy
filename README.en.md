@@ -24,7 +24,7 @@ The menu-bar item shows SSD usage at all times; clicking it opens a minimal drop
 
 ## Features
 
-Nine screens in a sidebar, plus a persistent menu-bar item.
+Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant panel on the right.
 
 | Screen | Contents |
 |---|---|
@@ -37,8 +37,64 @@ Nine screens in a sidebar, plus a persistent menu-bar item.
 | Android caches | Gradle caches and distributions, `~/.android` caches, Android Studio IDE caches |
 | Android emulators | AVDs in `~/.android/avd`; deletion also clears the `.ini` pointer |
 | Temp files | Top-level entries in `/private/tmp` and `$TMPDIR` (safety rules and limits below) |
+| Dev daemons | Memory and swap metrics; terminate long-running dev daemons (Gradle, Kotlin) |
+| Settings | AI agent provider connection (provider, API root URL, model, API key) |
 
 The menu-bar item shows SSD usage, refreshed every 60 seconds. Clicking it opens a minimal dropdown with a gauge plus Open / Quit.
+
+## The window stays on top
+
+With no Dock icon (`LSUIElement`), a window that slips behind another app is unreachable. So opening the window handles activation, front ordering and Space placement together, and **always on top** is on by default (turn it off under Settings → 창).
+
+Activation alone measurably is not enough: when another app is full-screen it owns the active Space and our window stays on a different one — `lsappinfo` reports DiskTidy as frontmost and `CGWindowList` puts the window inside screen bounds, yet a screenshot captures only the full-screen editor. So the window level goes to `.floating` with `canJoinAllSpaces` and `fullScreenAuxiliary` (or `.normal` + `moveToActiveSpace` when always-on-top is off). Right after launch SwiftUI may not have created the window yet, so the presenter retries briefly until it exists.
+
+## AI assistant
+
+The speech-bubble toolbar button opens a panel on the right. It answers **from the screen you are currently looking at** — item count and total, selection state, the top 40 rows, scan state, error banner, and how that screen deletes things are rebuilt on every question and sent as the system prompt. Tabs register a snapshot function rather than a value, so asking after a scan finishes describes the current list, not an empty one.
+
+| Provider | Default root | Wire format |
+|---|---|---|
+| Anthropic (Claude) | `https://api.anthropic.com` | Messages API |
+| OpenAI | `https://api.openai.com` | Chat Completions |
+| Ollama (local) | `http://localhost:11434` | Chat Completions compatible |
+| OpenAI-compatible (custom) | you provide | Chat Completions |
+
+The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter the root only; a trailing slash, a `/v1`, or a full endpoint path copied from the docs is absorbed.
+
+**Models are picked from a dropdown.** The settings screen fetches `GET /v1/models` when it opens (both wire formats return the same shape). Embedding, speech, image and moderation models are filtered out — picking one only produces a failure. Turn on **직접 입력** (manual entry) for names that are not in the list, such as an internal gateway or a preview model. Listing does not require a model name; not knowing the name is the reason to list.
+
+**Release builds take API keys only.** Signing in with a consumer subscription (Claude Pro/Max, ChatGPT Plus/Pro) is not shipped. Anthropic [explicitly does not permit](https://code.claude.com/docs/en/legal-and-compliance) third-party developers to offer claude.ai login or to route requests through Free/Pro/Max credentials on their users' behalf, and reserves the right to enforce without notice; ChatGPT subscriptions likewise do not include API usage (separate billing). To run without a key, choose a local provider such as Ollama.
+
+### Debug builds only: CLI subscription login
+
+Debug builds (`swift build`) show one extra provider — **Claude Code CLI · 구독 로그인 (개발 빌드 전용)** — for your own testing. It shells out to the official `claude` CLI you are already logged into and uses its stdout as the answer:
+
+```
+claude -p <whole transcript> --model sonnet --output-format text \
+       --append-system-prompt <system prompt incl. screen snapshot> \
+       --disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task Read Glob Grep \
+       --strict-mcp-config
+```
+
+What it deliberately does **not** do matters more: it never reads subscription OAuth tokens and never spoofs client headers. That pattern is blocked server-side and is grounds for account suspension. This runs the same command you would type in a terminal, under the same credentials, and the app never sees or stores them.
+
+Three guardrails: every tool is denied (the screen snapshot is already in the prompt, and an open tool would let this app edit files or run commands), the working directory is `$TMPDIR`, and a 180-second timeout keeps a stale login from hanging the chat forever.
+
+Setup: run `claude` once in a terminal to log in, then put the output of `which claude` into **CLI 실행 파일 경로** in Settings (the default scans common install locations — a GUI-launched app only has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`). Models come from the CLI aliases (`sonnet`, `opus`, `haiku`).
+
+Limitation: the reply arrives in one piece rather than streaming, because each CLI's stream-json format differs.
+
+**What leaves your machine** — each question sends that screen's **item names, paths, sizes and selection state** to the provider you chose. File contents are never sent. To keep everything local, use a local provider such as Ollama.
+
+**Key storage** — API keys live in the macOS keychain (`com.jimmy.disktidy.ai`), one entry per provider. `UserDefaults` holds only the provider, root URL and model. Ad-hoc signed builds change signing identity on every build, so the keychain will re-prompt for access.
+
+**The assistant cannot operate the app.** No tool calling is wired up. Deleting, erasing and terminating always require you to press the button yourself, confirmation dialogs included.
+
+Requests are never sent over plaintext `http` to a remote host (key exposure). `http` is allowed for loopback (`localhost`, `127.0.0.1`, `::1`), and for `*.local` LAN addresses **only with providers that need no API key**.
+
+Answers render as Markdown — only what models actually emit (bold, italic, inline code, bullets, numbered lists, headings, fenced code), with inline formatting delegated to Foundation's `AttributedString(markdown:)`. Half-arrived syntax during streaming (`**bold`) and unterminated code fences never drop characters. Messages you type stay verbatim, so a `*` you wrote is not eaten as formatting.
+
+Answers are capped at 1024 tokens. When the cap truncates a reply, the app appends `(답변이 길이 제한으로 잘렸습니다.)` — a truncated answer must not read as a complete one.
 
 ## Project cache detection rules
 
@@ -166,6 +222,8 @@ Each build generates a fresh ad-hoc signature, so macOS may re-ask for folder pe
 - **Six cache tabs share a single `CleanableListViewModel`,** injecting only the scanner closure. Scanning and deletion both run off the main thread, and refresh is guarded against re-entry.
 - **The temp-files tab is the one tab that does not use `CleanableListViewModel`.** `CleanableItem.id` is a fresh `UUID()`, so it does not preserve file identity as of the scan. Using it for an irreversible delete would remove whatever file happens to carry that name at deletion time. `TempCandidate` carries the raw `lstat` values instead, with its own view model and view.
 - **`lsof` runs exactly once per scan.** `lsof +D /private/tmp` walks the whole tree and is unusable. `lsof -w -n -F0n -u <uid>` returns every open path for the user's processes as NUL-terminated fields in one shot (measured: 1.2 s, ~89,000 fields). Parsing line by line breaks on filenames containing newlines.
+- **AI screen context is registered as a closure, not a value.** Each tab hands `ChatContextStore` a snapshot function in `onAppear`, and the assistant calls it the moment you send a message. Freezing a value would describe the empty list captured before a 26 GB tree scan finished.
+- **Four providers, one client.** There are only two real wire formats — Anthropic Messages and OpenAI Chat Completions — so `AIWireFormat` splits request building (`AIRequestBuilder`) and SSE parsing (`AIStreamParser`). Both are pure functions and are tested without a network.
 - **Scanning and deletion share one root policy (`TempRootPolicy.production`).** If the two disagreed, every safety rule would collapse, so no API taking a root is exposed to the UI or to callers of the deleter.
 - **Path containment compares UTF-8 bytes, not `String.hasPrefix`.** `hasPrefix` works on grapheme clusters, so a filename starting with a combining mark merges with the `/` separator and a real descendant is judged "not a descendant".
 
