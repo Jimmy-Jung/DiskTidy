@@ -24,6 +24,13 @@ struct ProjectCacheTabView: View {
         .padding()
         .onAppear { syncRoots() }
         .onChange(of: rootViewModel.roots) { _ in syncRoots() }
+        .screenContext("프로젝트 캐시") { [listViewModel] in
+            ScreenContextBuilder.cleanableList(
+                title: "프로젝트 빌드 캐시",
+                viewModel: listViewModel,
+                note: Self.emptyHint
+            )
+        }
     }
 
     private func syncRoots() {

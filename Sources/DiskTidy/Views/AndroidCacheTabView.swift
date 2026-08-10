@@ -8,5 +8,11 @@ struct AndroidCacheTabView: View {
             .onAppear {
                 if viewModel.items.isEmpty { viewModel.refresh() }
             }
+            .screenContext("Android 캐시") { [viewModel] in
+                ScreenContextBuilder.cleanableList(
+                    title: "Android 캐시 (Gradle · Android Studio)",
+                    viewModel: viewModel
+                )
+            }
     }
 }

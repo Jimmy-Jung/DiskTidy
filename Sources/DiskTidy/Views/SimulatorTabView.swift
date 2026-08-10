@@ -69,6 +69,9 @@ struct SimulatorTabView: View {
         .onAppear {
             if viewModel.items.isEmpty { viewModel.refresh() }
         }
+        .screenContext("시뮬레이터") { [viewModel] in
+            ScreenContextBuilder.simulators(viewModel: viewModel)
+        }
         // simctl delete/erase는 휴지통을 거치지 않는 되돌릴 수 없는 작업이라 확인을 받는다.
         .confirmationDialog(
             "선택한 \(selectedCount)개 기기를 완전히 삭제합니다. 되돌릴 수 없습니다.",

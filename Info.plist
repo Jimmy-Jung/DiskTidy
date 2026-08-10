@@ -34,5 +34,12 @@
     <string>선택한 프로젝트 폴더의 빌드 캐시를 찾아 정리하기 위해 접근 권한이 필요합니다.</string>
     <key>NSDesktopFolderUsageDescription</key>
     <string>데스크탑을 스캔 대상으로 지정한 경우 대용량 파일을 찾기 위해 접근 권한이 필요합니다.</string>
+    <!-- Ollama 같은 로컬 모델 서버는 http://localhost로 뜬다. ATS 전체를 열지 않고
+         로컬 네트워킹만 허용한다. 원격 평문 http는 AIRequestBuilder가 따로 막는다. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

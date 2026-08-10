@@ -33,5 +33,6 @@ struct StorageTabView: View {
         }
         .padding()
         .onAppear { monitor.refresh() }
+        .screenContext("SSD 용량") { [monitor] in ScreenContextBuilder.storage(monitor: monitor) }
     }
 }

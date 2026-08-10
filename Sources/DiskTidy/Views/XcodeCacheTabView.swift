@@ -11,5 +11,11 @@ struct XcodeCacheTabView: View {
         .onAppear {
             if viewModel.items.isEmpty { viewModel.refresh() }
         }
+        .screenContext("Xcode 캐시") { [viewModel] in
+            ScreenContextBuilder.cleanableList(
+                title: "Xcode 캐시 (DerivedData · DeviceSupport · Archives)",
+                viewModel: viewModel
+            )
+        }
     }
 }

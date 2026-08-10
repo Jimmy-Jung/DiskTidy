@@ -12,5 +12,12 @@ struct AndroidEmulatorTabView: View {
             .onAppear {
                 if viewModel.items.isEmpty { viewModel.refresh() }
             }
+            .screenContext("Android 에뮬레이터") { [viewModel] in
+                ScreenContextBuilder.cleanableList(
+                    title: "Android 에뮬레이터 (AVD)",
+                    viewModel: viewModel,
+                    note: "AVD 디렉터리를 지울 때 짝인 <이름>.ini 포인터 파일도 함께 휴지통으로 갑니다."
+                )
+            }
     }
 }

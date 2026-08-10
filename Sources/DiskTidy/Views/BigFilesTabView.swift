@@ -23,6 +23,13 @@ struct BigFilesTabView: View {
         .padding()
         .onAppear { syncRoots() }
         .onChange(of: rootViewModel.roots) { _ in syncRoots() }
+        .screenContext("대용량 파일") { [listViewModel] in
+            ScreenContextBuilder.cleanableList(
+                title: "대용량 파일 (200MB 이상)",
+                viewModel: listViewModel,
+                note: "선택한 폴더 안에서 200MB 이상인 파일만 보여 줍니다."
+            )
+        }
     }
 
     private func syncRoots() {

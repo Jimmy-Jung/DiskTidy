@@ -9,5 +9,11 @@ struct CacheTabView: View {
             .onAppear {
                 if viewModel.items.isEmpty { viewModel.refresh() }
             }
+            .screenContext("캐시데이터") { [viewModel] in
+                ScreenContextBuilder.cleanableList(
+                    title: "캐시데이터 (~/Library/Caches)",
+                    viewModel: viewModel
+                )
+            }
     }
 }

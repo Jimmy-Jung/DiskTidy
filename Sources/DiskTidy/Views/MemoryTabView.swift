@@ -76,6 +76,9 @@ struct MemoryTabView: View {
             Text(confirmationDetail)
         }
         .onAppear { if viewModel.processes.isEmpty { viewModel.refreshAll() } }
+        .screenContext("개발 데몬 정리") { [viewModel] in
+            ScreenContextBuilder.memory(viewModel: viewModel)
+        }
     }
 
     /// 확인창에 대상 identity 스냅샷을 그대로 보여 준다. 이름만 보이면 PID가 재사용된

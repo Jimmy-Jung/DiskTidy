@@ -65,6 +65,9 @@ struct TempTabView: View {
             Button("취소", role: .cancel) {}
         }
         .onAppear { if viewModel.items.isEmpty { viewModel.refresh() } }
+        .screenContext("임시파일") { [viewModel] in
+            ScreenContextBuilder.temp(viewModel: viewModel)
+        }
     }
 }
 

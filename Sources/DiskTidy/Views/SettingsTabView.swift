@@ -1,0 +1,157 @@
+import SwiftUI
+
+/// AI Agent 제공자 연결 설정. 값은 제공자별로 저장되고 API 키만 키체인으로 간다.
+struct SettingsTabView: View {
+    @EnvironmentObject private var settings: AISettingsViewModel
+
+    /// 목록에 없는 모델(사내 게이트웨이·프리뷰 등)을 쓰려면 직접 입력으로 빠져나간다.
+    @State private var entersModelManually = false
+
+    /// `ContentView`와 같은 키를 본다. 값이 바뀌면 그쪽 `onChange`가 창 레벨을 바꾼다.
+    @AppStorage(WindowPresenter.alwaysOnTopKey) private var isAlwaysOnTop = true
+
+    var body: some View {
+        Form {
+            Section("AI Agent 제공자") {
+                Picker("제공자", selection: $settings.provider) {
+                    // 배포 빌드에는 CLI 제공자가 아예 목록에 없다.
+                    ForEach(AIProvider.selectable) { provider in
+                        Text(provider.label).tag(provider)
+                    }
+                }
+
+                TextField(settings.provider.endpointFieldLabel, text: $settings.baseURL)
+                endpointHint
+
+                modelField
+
+                if settings.provider.requiresAPIKey {
+                    SecureField("API 키", text: $settings.apiKey)
+                    Text("키는 macOS 키체인에 저장됩니다. 설정 파일에는 남지 않습니다.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                HStack {
+                    Button("저장") { settings.save() }
+                        .keyboardShortcut("s", modifiers: .command)
+                    Button("연결 테스트") { settings.testConnection() }
+                        .disabled(settings.isTesting || !settings.isConfigured)
+                    Button("기본값으로") { settings.resetToDefaults() }
+                    if settings.isTesting { ProgressView().controlSize(.small) }
+                    Spacer()
+                    if settings.hasUnsavedChanges {
+                        Text("저장되지 않은 변경 있음")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                if let status = settings.statusMessage {
+                    Text(status).font(.callout).textSelection(.enabled)
+                }
+            }
+
+            Section("창") {
+                Toggle("항상 위에 표시", isOn: $isAlwaysOnTop)
+                Text("Dock 아이콘이 없는 앱이라 다른 앱을 클릭하면 창이 가려집니다. "
+                    + "켜 두면 정리 작업 중에도 창이 계속 보입니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("보내지는 정보") {
+                Text("""
+                챗봇에 질문하면 그 순간 보고 있는 탭의 항목 이름·경로·용량·선택 상태가 \
+                선택한 제공자의 서버로 전송됩니다. 파일 내용은 보내지 않습니다. \
+                로컬에서만 처리하려면 Ollama 같은 로컬 제공자를 쓰세요.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Text("챗봇은 앱을 조작할 수 없습니다. 삭제·종료는 항상 사용자가 직접 버튼을 눌러야 합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        // 키체인 읽기는 앱 시작이 아니라 이 화면이 보인 뒤에 한다.
+        .task {
+            await settings.loadKeyIfNeeded()
+            // 키가 채워진 뒤에야 목록을 물어볼 수 있다.
+            if settings.availableModels.isEmpty, settings.canListModels {
+                settings.refreshModels()
+            }
+        }
+        .screenContext("설정") { [settings] in
+            ScreenContextBuilder.settings(viewModel: settings)
+        }
+    }
+
+    /// 전송 방식에 따라 첫 필드의 뜻이 달라진다. CLI 제공자는 약관 경계도 함께 밝힌다.
+    @ViewBuilder
+    private var endpointHint: some View {
+        switch settings.provider.transport {
+        case .http:
+            Text("버전 경로(/v1/messages, /v1/chat/completions)는 자동으로 붙습니다. "
+                + "평문 http는 루프백(localhost · 127.0.0.1 · ::1)에만 허용하고, "
+                + "키가 필요 없는 로컬 제공자에 한해 *.local LAN 주소도 허용합니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .localCLI(let tool):
+            VStack(alignment: .leading, spacing: 4) {
+                Text("개발 빌드 전용 · 본인 테스트용")
+                    .font(.caption.bold())
+                    .foregroundStyle(.orange)
+                Text("""
+                이미 로그인된 \(tool.label)를 그대로 실행합니다. 앱은 자격증명을 읽지도 \
+                저장하지도 않습니다 — 터미널에서 `\(tool.executableName) -p`를 치는 것과 같은 \
+                경로입니다. 먼저 터미널에서 `\(tool.executableName)`을 실행해 로그인해 두세요.
+                """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("""
+                배포 빌드에서는 이 제공자를 고를 수 없습니다. 서드파티 앱이 사용자 구독으로 \
+                요청을 대행하는 것은 제공자 약관이 금지합니다.
+                """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !settings.isConfigured {
+                    Text("실행 파일을 찾지 못했습니다. `which \(tool.executableName)` 결과를 넣으세요.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
+    /// 목록을 받아 왔으면 드롭다운, 없거나 직접 입력을 켰으면 텍스트 필드.
+    @ViewBuilder
+    private var modelField: some View {
+        if settings.availableModels.isEmpty || entersModelManually {
+            TextField("모델", text: $settings.model)
+        } else {
+            Picker("모델", selection: $settings.model) {
+                ForEach(settings.modelOptions, id: \.self) { name in
+                    Text(name).tag(name)
+                }
+            }
+        }
+
+        HStack {
+            Button("모델 목록 불러오기") { settings.refreshModels() }
+                .disabled(settings.isLoadingModels || !settings.canListModels)
+            if settings.isLoadingModels { ProgressView().controlSize(.small) }
+            Spacer()
+            Toggle("직접 입력", isOn: $entersModelManually)
+                .toggleStyle(.checkbox)
+        }
+
+        if !settings.canListModels {
+            Text("목록을 불러오려면 API 루트 URL과 (필요한 경우) API 키를 먼저 채우세요.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
