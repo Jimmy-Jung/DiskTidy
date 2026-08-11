@@ -63,26 +63,39 @@ The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter
 
 **Models are picked from a dropdown.** The settings screen fetches `GET /v1/models` when it opens (both wire formats return the same shape). Embedding, speech, image and moderation models are filtered out — picking one only produces a failure. Turn on **직접 입력** (manual entry) for names that are not in the list, such as an internal gateway or a preview model. Listing does not require a model name; not knowing the name is the reason to list.
 
-**Release builds take API keys only.** Signing in with a consumer subscription (Claude Pro/Max, ChatGPT Plus/Pro) is not shipped. Anthropic [explicitly does not permit](https://code.claude.com/docs/en/legal-and-compliance) third-party developers to offer claude.ai login or to route requests through Free/Pro/Max credentials on their users' behalf, and reserves the right to enforce without notice; ChatGPT subscriptions likewise do not include API usage (separate billing). To run without a key, choose a local provider such as Ollama.
+**API keys are the default.** The app does not proxy subscription credentials. Anthropic [explicitly does not permit](https://code.claude.com/docs/en/legal-and-compliance) third-party developers to offer claude.ai login or to route requests through Free/Pro/Max credentials on their users' behalf, and reserves the right to enforce without notice; ChatGPT subscriptions likewise do not include API usage (separate billing). To run without a key, choose a local provider such as Ollama — or turn on the local CLI path below yourself.
 
-### Debug builds only: CLI subscription login
+### Local CLI providers (opt-in)
 
-Debug builds (`swift build`) show one extra provider — **Claude Code CLI · 구독 로그인 (개발 빌드 전용)** — for your own testing. It shells out to the official `claude` CLI you are already logged into and uses its stdout as the answer:
+Settings → **로컬 CLI 제공자** adds two providers to the list. It is off by default and asks for confirmation once when you turn it on.
+
+- **Claude Code CLI · 구독 로그인**
+- **Codex CLI · 구독 로그인**
+
+Each runs the official CLI you are already logged into as a child process and uses its output as the answer:
 
 ```
-claude -p <whole transcript> --model sonnet --output-format text \
+claude -p <whole transcript> --model sonnet \
+       --output-format stream-json --include-partial-messages --verbose \
        --append-system-prompt <system prompt incl. screen snapshot> \
        --disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task Read Glob Grep \
        --strict-mcp-config
+
+codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
+       <rules + screen snapshot + whole transcript>
 ```
 
 What it deliberately does **not** do matters more: it never reads subscription OAuth tokens and never spoofs client headers. That pattern is blocked server-side and is grounds for account suspension. This runs the same command you would type in a terminal, under the same credentials, and the app never sees or stores them.
 
-Three guardrails: every tool is denied (the screen snapshot is already in the prompt, and an open tool would let this app edit files or run commands), the working directory is `$TMPDIR`, and a 180-second timeout keeps a stale login from hanging the chat forever.
+Requests still go out **on your subscription**, so whether each provider's terms allow it is yours to verify — hence the default-off switch and the confirmation. This cannot ship through the App Store (the sandbox forbids executing external binaries); direct DMG distribution only.
 
-Setup: run `claude` once in a terminal to log in, then put the output of `which claude` into **CLI 실행 파일 경로** in Settings (the default scans common install locations — a GUI-launched app only has `PATH=/usr/bin:/bin:/usr/sbin:/sbin`). Models come from the CLI aliases (`sonnet`, `opus`, `haiku`).
+Guardrails: Claude Code gets every tool denied (the screen snapshot is already in the prompt, and an open tool would let this app edit files or run commands) plus `--strict-mcp-config`. Codex has no switch to disable tools wholesale, so it runs under `--sandbox read-only` and `--ephemeral` (no session files). Both use `$TMPDIR` as the working directory and a 180-second timeout.
 
-Limitation: the reply arrives in one piece rather than streaming, because each CLI's stream-json format differs.
+**Streaming differs per tool.** Claude Code streams token by token (without `--include-partial-messages` only completed blocks arrive, which collapses into one chunk). Codex has no delta option in `codex exec --json`, so the reply appears at once — a progress indicator holds the answer's place until then.
+
+**Models**: Claude Code takes CLI aliases (`sonnet`, `opus`, `haiku`). For Codex, **leave the model field empty** to use whatever `~/.codex/config.toml` selects — the valid set depends on account type and CLI version, so the app does not choose for you.
+
+Setup: log in once in a terminal, then put the output of `which claude` (or `which codex`) into **CLI 실행 파일 경로** in Settings. The default scans common install locations and nvm version directories, because a GUI-launched app only has `PATH=/usr/bin:/bin`. CLIs installed via npm are `#!/usr/bin/env node` shims that also need `node`, so the child process gets the executable's own directory prepended to `PATH`.
 
 **What leaves your machine** — each question sends that screen's **item names, paths, sizes and selection state** to the provider you chose. File contents are never sent. To keep everything local, use a local provider such as Ollama.
 

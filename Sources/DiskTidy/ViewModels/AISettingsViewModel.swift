@@ -15,6 +15,21 @@ final class AISettingsViewModel: ObservableObject {
         }
     }
 
+    /// 로컬 CLI 제공자를 목록에 노출할지. 기본은 꺼짐.
+    ///
+    /// 앱이 자격증명을 만지지는 않지만, 내 구독으로 앱이 요청을 내보내는 형태다. 켜는
+    /// 판단은 사용자가 한다. 껐을 때 이미 CLI 제공자를 쓰고 있었다면 첫 HTTP 제공자로
+    /// 되돌린다 — 목록에서 사라진 값을 그대로 두면 설정 화면에 빈 선택이 남는다.
+    @Published var isLocalCLIEnabled: Bool {
+        didSet {
+            guard isLocalCLIEnabled != oldValue else { return }
+            store.setString(isLocalCLIEnabled ? "1" : "0", forKey: Self.localCLIEnabledKey)
+            if !isLocalCLIEnabled, provider.cliTool != nil {
+                provider = Self.fallbackProvider
+            }
+        }
+    }
+
     @Published var baseURL: String = ""
     @Published var model: String = ""
     /// 화면에 떠 있는 키. 저장을 눌러야 키체인에 들어간다.
@@ -46,6 +61,15 @@ final class AISettingsViewModel: ObservableObject {
     }
 
     private static let providerKey = "AI.provider"
+    private static let localCLIEnabledKey = "AI.localCLIEnabled"
+
+    /// CLI 제공자를 끌 때 돌아갈 자리.
+    private static let fallbackProvider = AIProvider.anthropic
+
+    /// 드롭다운에 넣을 제공자.
+    var selectableProviders: [AIProvider] {
+        AIProvider.selectable(includesLocalCLI: isLocalCLIEnabled)
+    }
 
     init(
         store: SettingsStore = UserDefaultsSettingsStore(),
@@ -62,9 +86,14 @@ final class AISettingsViewModel: ObservableObject {
         self.cliClient = cliClient
         self.fetchModels = fetchModels
 
+        // `didSet`은 init 안에서 불리지 않는다. 첫 값은 직접 채운다.
+        let enabled = store.string(forKey: Self.localCLIEnabledKey) == "1"
+        isLocalCLIEnabled = enabled
+
         let saved = store.string(forKey: Self.providerKey).flatMap(AIProvider.init(rawValue:))
-        // 개발 빌드에서 고른 CLI 제공자가 배포 빌드에 남아 있으면 쓸 수 없다.
-        let stored = (saved.map(AIProvider.selectable.contains) == true ? saved : nil) ?? .anthropic
+        // CLI 제공자를 껐는데 그 값이 저장돼 있으면 고를 수 없는 상태로 남는다.
+        let selectable = AIProvider.selectable(includesLocalCLI: enabled)
+        let stored = saved.flatMap { selectable.contains($0) ? $0 : nil } ?? Self.fallbackProvider
         provider = stored
 
         // `didSet`은 init 안에서 불리지 않는다. 첫 값은 직접 채운다.
@@ -108,7 +137,11 @@ final class AISettingsViewModel: ObservableObject {
 
     /// 채팅을 보낼 수 있는 상태인지. 실패할 요청을 보내고 오류를 띄우는 대신 미리 막는다.
     var isConfigured: Bool {
-        guard !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // Codex CLI는 자기 설정의 모델을 쓰므로 모델 칸이 비어도 된다.
+        if provider.requiresModel,
+           model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return false
+        }
 
         switch provider.transport {
         case .http(let format):

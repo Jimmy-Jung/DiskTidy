@@ -16,10 +16,13 @@ struct AICLIClient {
     static let timeout: TimeInterval = 180
 
     struct Invocation: Equatable {
+        let tool: AICLITool
         let executable: String
         let arguments: [String]
         /// 실수로 파일을 건드려도 저장소가 아니라 임시 디렉터리에서 일어나게 한다.
         let workingDirectory: URL
+        /// 자식에게 물려줄 `PATH`.
+        let searchPath: String
     }
 
     private let run: @Sendable (Invocation) -> AsyncStream<ShellStreamEvent>
@@ -30,6 +33,7 @@ struct AICLIClient {
                 invocation.executable,
                 invocation.arguments,
                 workingDirectory: invocation.workingDirectory,
+                environment: ["PATH": invocation.searchPath],
                 timeout: AICLIClient.timeout
             )
         }
@@ -50,9 +54,10 @@ struct AICLIClient {
         }
 
         let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedModel.isEmpty else { throw AIChatError.missingModel }
+        if tool.requiresModel, trimmedModel.isEmpty { throw AIChatError.missingModel }
 
         return Invocation(
+            tool: tool,
             executable: path,
             arguments: arguments(
                 tool: tool,
@@ -60,13 +65,31 @@ struct AICLIClient {
                 systemPrompt: systemPrompt,
                 messages: messages
             ),
-            workingDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            workingDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
+            searchPath: searchPath(forExecutableAt: path)
         )
+    }
+
+    /// 자식에게 물려줄 `PATH`.
+    ///
+    /// GUI로 실행한 앱의 `PATH`에는 `/usr/bin:/bin` 정도만 들어 있다. npm으로 깐 CLI는
+    /// `#!/usr/bin/env node` 셰방이라 `node`를 못 찾아 그대로 실패한다(실측: `codex`가
+    /// nvm 디렉터리의 node를 필요로 한다). 실행 파일이 있는 디렉터리를 맨 앞에 붙이면
+    /// 같은 디렉터리의 `node`를 찾는다.
+    static func searchPath(forExecutableAt path: String) -> String {
+        let executableDirectory = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        let inherited = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        return ([executableDirectory] + inherited.split(separator: ":").map(String.init))
+            // 같은 디렉터리를 두 번 넣지 않는다. 앞자리가 우선이다.
+            .reduce(into: [String]()) { unique, directory in
+                guard !directory.isEmpty, !unique.contains(directory) else { return }
+                unique.append(directory)
+            }
+            .joined(separator: ":")
     }
 
     func stream(_ invocation: Invocation) -> AsyncThrowingStream<AIChatChunk, Error> {
         AsyncThrowingStream { continuation in
-            #if DEBUG
             let run = self.run
             let task = Task {
                 // CLI가 보고한 실패 사유. 종료 코드보다 이쪽이 구체적이라 우선한다.
@@ -80,7 +103,7 @@ struct AICLIClient {
                     }
                     switch event {
                     case .line(let line):
-                        switch AICLIStreamParser.event(from: line) {
+                        switch AICLIStreamParser.event(from: line, tool: invocation.tool) {
                         case .text(let text): continuation.yield(.text(text))
                         case .truncated: continuation.yield(.truncated)
                         case .failure(let message): reportedFailure = message
@@ -116,9 +139,6 @@ struct AICLIClient {
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
-            #else
-            continuation.finish(throwing: AIChatError.debugOnlyProvider)
-            #endif
         }
     }
 
@@ -156,6 +176,25 @@ struct AICLIClient {
                 // 전역 설정의 MCP 서버를 끌어오지 않는다. 느리고 부작용이 있다.
                 "--strict-mcp-config",
             ]
+
+        case .codex:
+            // Codex는 `--append-system-prompt`가 없어 규칙을 프롬프트 앞에 붙인다.
+            var arguments = [
+                "exec",
+                // 이벤트를 JSONL로 받는다. 조각 단위 옵션은 없어서 답변이 한 번에 온다.
+                "--json",
+                // 모델이 명령을 실행해도 쓰기는 막는다. 이 앱은 답만 필요하다.
+                "--sandbox", "read-only",
+                // 임시 디렉터리에서 돌리므로 git 저장소가 아니다.
+                "--skip-git-repo-check",
+                // 세션 파일을 남기지 않는다. 질문 하나가 사용자 홈에 흔적을 만들 이유가 없다.
+                "--ephemeral",
+            ]
+            // 모델은 사용자가 채웠을 때만 넘긴다. 비우면 CLI가 자기 설정을 쓴다 —
+            // 유효한 이름이 계정 종류와 버전에 따라 달라 앱이 고를 수 없다.
+            if !model.isEmpty { arguments += ["--model", model] }
+            arguments.append(systemPrompt + "\n\n" + transcript(messages))
+            return arguments
         }
     }
 }

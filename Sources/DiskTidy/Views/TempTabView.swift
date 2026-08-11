@@ -91,6 +91,21 @@ private struct TempCandidateList: View {
                     Text(item.sizeString)
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
+                    ExplanationButton(
+                        subject: ExplanationSubject(
+                            key: "temp:\(item.path.path)",
+                            title: item.name,
+                            subtitle: item.path.path,
+                            facts: [
+                                "항목: \(item.name)",
+                                "경로: \(item.path.path)",
+                                "크기: \(item.sizeString)",
+                                "마지막 수정: \(item.modifiedDateString)",
+                                "이 화면의 정리 방식: 완전 삭제 (휴지통을 거치지 않음, 되돌릴 수 없음)",
+                            ]
+                        ),
+                        screenTitle: "임시파일"
+                    )
                 }
             }
         }

@@ -10,12 +10,72 @@ struct SettingsTabView: View {
     /// `ContentView`와 같은 키를 본다. 값이 바뀌면 그쪽 `onChange`가 창 레벨을 바꾼다.
     @AppStorage(WindowPresenter.alwaysOnTopKey) private var isAlwaysOnTop = true
 
+    @State private var isConfirmingLocalCLI = false
+
+    /// 로컬 CLI 제공자 옵트인.
+    ///
+    /// 기본으로 숨기는 이유는 기술이 아니라 자격이다. 앱은 토큰을 읽지도 위장하지도 않고
+    /// 사용자가 터미널에서 직접 치는 것과 같은 명령을 실행할 뿐이지만, 결과적으로 내 구독으로
+    /// 앱이 요청을 내보낸다. 그 판단을 사용자가 내리게 한다.
+    @ViewBuilder
+    private var localCLISection: some View {
+        Section("로컬 CLI 제공자") {
+            Toggle("이미 로그인된 로컬 CLI 사용", isOn: localCLIBinding)
+            Text(
+                """
+                Claude Code · Codex CLI를 자식 프로세스로 실행해 답을 받습니다. 앱은 토큰을 \
+                읽거나 헤더를 위장하지 않고, 인증은 CLI가 이미 갖고 있는 것을 그대로 씁니다. \
+                요청은 당신의 구독으로 나갑니다 — 각 제공자 약관에서 허용되는지는 직접 \
+                확인하세요.
+                """
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            if settings.provider.cliTool == .codex {
+                Text(
+                    """
+                    Codex CLI는 답을 조각 단위로 보내지 않습니다. 완성된 뒤 한 번에 표시됩니다. \
+                    모델 칸을 비우면 CLI 자기 설정(~/.codex/config.toml)의 모델을 씁니다.
+                    """
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .alert("로컬 CLI를 사용할까요?", isPresented: $isConfirmingLocalCLI) {
+            Button("사용", role: .destructive) { settings.isLocalCLIEnabled = true }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text(
+                """
+                이 앱이 당신의 로컬 CLI를 실행하고, 요청은 당신의 구독으로 나갑니다. \
+                앱은 자격증명을 만지지 않습니다. 제공자 약관에서 허용되는지는 직접 확인하세요.
+                """
+            )
+        }
+    }
+
+    /// 켤 때만 확인을 받는다. 끄는 것은 되돌리기 쉬운 방향이라 그냥 끈다.
+    private var localCLIBinding: Binding<Bool> {
+        Binding(
+            get: { settings.isLocalCLIEnabled },
+            set: { isOn in
+                if isOn {
+                    isConfirmingLocalCLI = true
+                } else {
+                    settings.isLocalCLIEnabled = false
+                }
+            }
+        )
+    }
+
     var body: some View {
         Form {
             Section("AI Agent 제공자") {
                 Picker("제공자", selection: $settings.provider) {
-                    // 배포 빌드에는 CLI 제공자가 아예 목록에 없다.
-                    ForEach(AIProvider.selectable) { provider in
+                    // 로컬 CLI 제공자는 켜지 않으면 목록에 없다.
+                    ForEach(settings.selectableProviders) { provider in
                         Text(provider.label).tag(provider)
                     }
                 }
@@ -32,6 +92,8 @@ struct SettingsTabView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            localCLISection
 
             Section {
                 HStack {

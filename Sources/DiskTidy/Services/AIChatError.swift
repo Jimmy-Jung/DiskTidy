@@ -14,8 +14,6 @@ enum AIChatError: Error, Equatable {
     case notHTTPProvider
     case cliNotFound(String)
     case cliFailed(exitCode: Int32, message: String)
-    /// 배포 빌드에서 CLI 제공자를 쓰려 한 경우.
-    case debugOnlyProvider
 
     var message: String {
         switch self {
@@ -37,8 +35,6 @@ enum AIChatError: Error, Equatable {
             return "CLI를 찾을 수 없습니다: \(path). 설정 탭에서 실행 파일 경로를 확인하세요."
         case .cliFailed(let exitCode, let message):
             return "CLI가 실패했습니다 (종료 코드 \(exitCode)). \(message)"
-        case .debugOnlyProvider:
-            return "이 제공자는 개발 빌드에서만 쓸 수 있습니다. 배포 빌드에서는 API 키를 사용하세요."
         }
     }
 

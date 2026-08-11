@@ -78,6 +78,7 @@ enum ShellRunner {
         _ executable: String,
         _ arguments: [String],
         workingDirectory: URL? = nil,
+        environment: [String: String] = [:],
         timeout: TimeInterval? = nil
     ) -> AsyncStream<ShellStreamEvent> {
         AsyncStream { continuation in
@@ -85,6 +86,12 @@ enum ShellRunner {
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = arguments
             if let workingDirectory { process.currentDirectoryURL = workingDirectory }
+            if !environment.isEmpty {
+                // 물려받은 환경 위에 덮어쓴다. 통째로 갈아 치우면 `HOME`이 사라져 CLI가
+                // 자기 설정과 로그인 상태를 찾지 못한다.
+                process.environment = ProcessInfo.processInfo.environment
+                    .merging(environment) { _, new in new }
+            }
 
             let outPipe = Pipe()
             process.standardOutput = outPipe

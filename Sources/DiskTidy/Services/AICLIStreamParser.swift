@@ -27,7 +27,7 @@ enum AICLIStreamParser {
         case ignored
     }
 
-    static func event(from line: String) -> Event {
+    static func event(from line: String, tool: AICLITool) -> Event {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         // CLI는 JSON 사이에 평문 경고를 섞어 보낸다("Warning: no stdin data received...").
         guard trimmed.hasPrefix("{"),
@@ -35,6 +35,71 @@ enum AICLIStreamParser {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return .ignored }
 
+        switch tool {
+        case .claudeCode: return claudeCodeEvent(object)
+        case .codex: return codexEvent(object)
+        }
+    }
+
+    // MARK: - Codex
+
+    /// Codex는 조각 단위 이벤트를 내지 않는다. `codex exec --json`에 델타 옵션이 없어
+    /// 답변이 `item.completed`(`agent_message`) 하나로 통째로 온다 — 실측 확인.
+    ///
+    /// 실측한 줄 구성(codex-cli 0.147.0):
+    /// ```
+    /// {"type":"thread.started","thread_id":"…"}
+    /// {"type":"turn.started"}
+    /// {"type":"item.completed","item":{"type":"error","message":"스킬 예산 경고…"}}
+    /// {"type":"item.completed","item":{"type":"agent_message","text":"1\n2"}}
+    /// {"type":"turn.completed","usage":{…}}
+    /// ```
+    /// 실패는 최상위 `{"type":"error"}`와 `{"type":"turn.failed","error":{"message":…}}`로 온다.
+    private static func codexEvent(_ object: [String: Any]) -> Event {
+        switch object["type"] as? String {
+        case "item.completed":
+            guard let item = object["item"] as? [String: Any] else { return .ignored }
+            // `item`의 `error`는 실패가 아니라 경고다(스킬 예산, 훅 타임아웃 조정 등).
+            // 이걸 실패로 올리면 정상 응답이 오류로 뒤집힌다.
+            guard item["type"] as? String == "agent_message",
+                  let text = item["text"] as? String,
+                  !text.isEmpty
+            else { return .ignored }
+            return .text(text)
+
+        case "turn.completed":
+            return .done
+
+        case "turn.failed":
+            guard let error = object["error"] as? [String: Any] else {
+                return .failure("알 수 없는 오류")
+            }
+            return .failure(errorText(in: error) ?? "알 수 없는 오류")
+
+        case "error":
+            return .failure(errorText(in: object) ?? "알 수 없는 오류")
+
+        default:
+            return .ignored
+        }
+    }
+
+    /// Codex는 오류 문구 안에 JSON을 문자열로 다시 감아 넣는다. 한 겹 벗겨 사람이 읽을
+    /// 문장만 남긴다 — 그대로 두면 배너에 이스케이프된 JSON이 그대로 나온다.
+    private static func errorText(in object: [String: Any]) -> String? {
+        guard let message = object["message"] as? String, !message.isEmpty else { return nil }
+        guard let data = message.data(using: .utf8),
+              let nested = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let inner = nested["error"] as? [String: Any],
+              let text = inner["message"] as? String,
+              !text.isEmpty
+        else { return message }
+        return text
+    }
+
+    // MARK: - Claude Code
+
+    private static func claudeCodeEvent(_ object: [String: Any]) -> Event {
         switch object["type"] as? String {
         case "stream_event":
             return streamEvent(object["event"] as? [String: Any])

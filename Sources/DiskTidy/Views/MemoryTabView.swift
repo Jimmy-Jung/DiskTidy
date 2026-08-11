@@ -222,6 +222,24 @@ private struct ProcessList: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    ExplanationButton(
+                        subject: ExplanationSubject(
+                            // PID는 재시작하면 바뀐다. 이름과 분류로 캐시해야 같은 데몬을
+                            // 다시 물어보지 않는다.
+                            key: "process:\(process.kind.label):\(process.displayName)",
+                            title: process.displayName,
+                            subtitle: "PID \(process.identity.pid) · \(process.kind.label)",
+                            facts: [
+                                "항목: 실행 중인 프로세스 \(process.displayName)",
+                                "분류: \(process.kind.label)",
+                                "메모리(RSS 근사치): \(process.residentString)",
+                                process.isTerminable
+                                    ? "이 화면의 정리 방식: SIGTERM·SIGKILL로 종료 (되돌릴 수 없음, 도구가 다시 띄울 수 있음)"
+                                    : "이 화면에서는 종료할 수 없고 표시만 한다",
+                            ]
+                        ),
+                        screenTitle: "개발 데몬"
+                    )
                 }
             }
         }

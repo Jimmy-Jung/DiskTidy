@@ -25,16 +25,19 @@ enum AIWireFormat: Sendable {
 /// 직접 치는 것과 같은 명령을 같은 자격증명으로 실행할 뿐이다.
 enum AICLITool: String, CaseIterable, Sendable {
     case claudeCode
+    case codex
 
     var label: String {
         switch self {
         case .claudeCode: return "Claude Code CLI"
+        case .codex: return "Codex CLI"
         }
     }
 
     var executableName: String {
         switch self {
         case .claudeCode: return "claude"
+        case .codex: return "codex"
         }
     }
 
@@ -42,26 +45,48 @@ enum AICLITool: String, CaseIterable, Sendable {
     /// 흔한 설치 위치를 훑어 기본값을 정하고, 못 찾으면 사용자가 직접 고친다.
     var candidatePaths: [String] {
         let home = NSHomeDirectory()
-        switch self {
-        case .claudeCode:
-            return [
-                "\(home)/.local/bin/claude",
-                "/opt/homebrew/bin/claude",
-                "/usr/local/bin/claude",
-            ]
-        }
+        let fixed = [
+            "\(home)/.local/bin/\(executableName)",
+            "/opt/homebrew/bin/\(executableName)",
+            "/usr/local/bin/\(executableName)",
+            "\(home)/.npm-global/bin/\(executableName)",
+            "\(home)/.volta/bin/\(executableName)",
+        ]
+        // nvm은 버전 디렉터리 안에 실행 파일을 둔다. 정적 목록으로 못 잡아 직접 훑는다.
+        return fixed + Self.nodeVersionManagerPaths(for: executableName)
     }
 
-    /// 드롭다운에 넣을 모델. CLI는 별칭을 받으며 릴리스마다 바뀌지 않는다.
+    /// 드롭다운에 넣을 모델.
+    ///
+    /// Codex는 비워 둔다. 유효한 모델 집합이 계정 종류(ChatGPT 로그인 여부)와 CLI 버전에
+    /// 따라 달라서, 사용자가 `~/.codex/config.toml`에 이미 골라 둔 값을 앱이 덮어쓰지 않고
+    /// 그대로 쓴다 — 실측에서 흔한 이름(`gpt-5-codex`)조차 거부됐다.
     var models: [String] {
         switch self {
         case .claudeCode: return ["sonnet", "opus", "haiku"]
+        case .codex: return []
+        }
+    }
+
+    /// 모델 이름을 반드시 받아야 하는지. Codex는 CLI 자기 설정을 쓰므로 비워도 된다.
+    var requiresModel: Bool {
+        switch self {
+        case .claudeCode: return true
+        case .codex: return false
         }
     }
 
     var defaultExecutablePath: String {
-        candidatePaths.first { FileManager.default.isExecutableFile(atPath: $0) }
-            ?? candidatePaths[0]
+        let paths = candidatePaths
+        return paths.first { FileManager.default.isExecutableFile(atPath: $0) } ?? paths[0]
+    }
+
+    /// `~/.nvm/versions/node/<버전>/bin/<이름>`을 최신 버전처럼 보이는 순서로 돌려준다.
+    /// 문자열 내림차순이라 semver 정렬은 아니지만 실행 가능한 것을 찾는 데는 충분하다.
+    private static func nodeVersionManagerPaths(for name: String) -> [String] {
+        let root = NSHomeDirectory() + "/.nvm/versions/node"
+        let versions = (try? FileManager.default.contentsOfDirectory(atPath: root)) ?? []
+        return versions.sorted(by: >).map { "\(root)/\($0)/bin/\(name)" }
     }
 }
 
@@ -77,19 +102,19 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     case openAI
     case ollama
     case openAICompatible
-    /// 개발 빌드 전용. 구독 계정으로 이미 로그인된 CLI를 그대로 쓴다.
+    /// 구독 계정으로 이미 로그인된 CLI를 그대로 쓴다. 기본으로 숨어 있고 사용자가 켠다.
     case claudeCodeCLI
+    case codexCLI
 
     var id: String { rawValue }
 
-    /// 설정 화면에 노출할 제공자. CLI 제공자는 개발 빌드에서만 고를 수 있다 —
-    /// 배포판이 사용자 구독으로 요청을 대행하는 것은 제공자 약관이 금지한다.
-    static var selectable: [AIProvider] {
-        #if DEBUG
-        return allCases
-        #else
-        return allCases.filter { if case .localCLI = $0.transport { return false } else { return true } }
-        #endif
+    /// 설정 화면에 노출할 제공자.
+    ///
+    /// CLI 제공자는 기본으로 숨는다. 앱이 자격증명을 만지지는 않지만, 내 구독으로 앱이
+    /// 요청을 내보내는 형태이므로 사용자가 명시적으로 켜야 한다.
+    static func selectable(includesLocalCLI: Bool) -> [AIProvider] {
+        guard !includesLocalCLI else { return allCases }
+        return allCases.filter { $0.cliTool == nil }
     }
 
     var label: String {
@@ -98,7 +123,8 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: return "OpenAI"
         case .ollama: return "Ollama (로컬)"
         case .openAICompatible: return "OpenAI 호환 (직접 입력)"
-        case .claudeCodeCLI: return "Claude Code CLI · 구독 로그인 (개발 빌드 전용)"
+        case .claudeCodeCLI: return "Claude Code CLI · 구독 로그인"
+        case .codexCLI: return "Codex CLI · 구독 로그인"
         }
     }
 
@@ -107,6 +133,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .anthropic: return .http(.anthropicMessages)
         case .openAI, .ollama, .openAICompatible: return .http(.openAIChatCompletions)
         case .claudeCodeCLI: return .localCLI(.claudeCode)
+        case .codexCLI: return .localCLI(.codex)
         }
     }
 
@@ -129,7 +156,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .openAI: return "https://api.openai.com"
         case .ollama: return "http://localhost:11434"
         case .openAICompatible: return ""
-        case .claudeCodeCLI: return AICLITool.claudeCode.defaultExecutablePath
+        case .claudeCodeCLI, .codexCLI: return cliTool?.defaultExecutablePath ?? ""
         }
     }
 
@@ -141,6 +168,8 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         case .ollama: return "llama3.1"
         case .openAICompatible: return ""
         case .claudeCodeCLI: return "sonnet"
+        // 비워 둔다. Codex는 자기 설정의 모델을 쓴다.
+        case .codexCLI: return ""
         }
     }
 
@@ -149,7 +178,24 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     var requiresAPIKey: Bool {
         switch self {
         case .anthropic, .openAI, .openAICompatible: return true
-        case .ollama, .claudeCodeCLI: return false
+        case .ollama, .claudeCodeCLI, .codexCLI: return false
+        }
+    }
+
+    /// 모델 이름이 반드시 있어야 하는지. CLI 제공자는 도구가 정한다.
+    var requiresModel: Bool {
+        cliTool?.requiresModel ?? true
+    }
+
+    /// 짧은 설명처럼 값싸게 끝내야 하는 요청에 쓸 모델.
+    ///
+    /// `nil`이면 사용자가 고른 모델을 그대로 쓴다. 이름을 앱이 확인할 수 없는 제공자에
+    /// 특정 모델 ID를 하드코딩하지 않는다 — 제공자가 이름을 바꾸거나 계정이 그 모델을
+    /// 못 쓰면 설명이 통째로 실패한다. CLI 별칭은 릴리스마다 바뀌지 않아 안전하다.
+    var fastModel: String? {
+        switch self {
+        case .claudeCodeCLI: return "haiku"
+        case .anthropic, .openAI, .ollama, .openAICompatible, .codexCLI: return nil
         }
     }
 
@@ -181,5 +227,11 @@ struct AISettings: Equatable, Sendable {
             baseURL: provider.defaultBaseURL,
             model: provider.defaultModel
         )
+    }
+
+    /// 값싼 요청용으로 모델만 바꾼 사본. 바꿀 모델이 없으면 그대로 돌려준다.
+    func usingFastModel() -> AISettings {
+        guard let fast = provider.fastModel else { return self }
+        return AISettings(provider: provider, baseURL: baseURL, model: fast)
     }
 }

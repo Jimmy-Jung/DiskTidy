@@ -46,6 +46,23 @@ struct SimulatorTabView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        ExplanationButton(
+                            subject: ExplanationSubject(
+                                // 이름만으로는 같은 기기가 런타임별로 여러 개일 수 있다.
+                                key: "simulator:\(item.name):\(item.runtime)",
+                                title: item.name,
+                                subtitle: "\(item.runtime) · \(item.state)",
+                                facts: [
+                                    "항목: iOS 시뮬레이터 기기 \(item.name)",
+                                    "런타임: \(item.runtime)",
+                                    "상태: \(item.state)",
+                                    "크기: \(item.sizeString)",
+                                    "마지막 사용: \(item.lastUsedString)",
+                                    "이 화면의 정리 방식: simctl delete로 완전 삭제 (되돌릴 수 없음)",
+                                ]
+                            ),
+                            screenTitle: "시뮬레이터"
+                        )
                     }
                 }
             }

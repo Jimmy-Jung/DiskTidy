@@ -1310,3 +1310,282 @@ struct AISettingsViewModelTests {
         #expect(context.lines.contains { $0.hasPrefix("API 키: 입력됨") })
     }
 }
+
+// MARK: - 로컬 CLI 제공자 노출
+
+@Suite("로컬 CLI 제공자 노출")
+struct LocalCLIProviderExposureTests {
+    @Test("끄면 CLI 제공자가 목록에서 사라진다")
+    func hidesLocalCLIWhenDisabled() {
+        let providers = AIProvider.selectable(includesLocalCLI: false)
+        #expect(providers.allSatisfy { $0.cliTool == nil })
+        #expect(!providers.contains(.claudeCodeCLI))
+        #expect(!providers.contains(.codexCLI))
+        #expect(providers.contains(.anthropic))
+    }
+
+    @Test("켜면 CLI 제공자가 함께 나온다")
+    func showsLocalCLIWhenEnabled() {
+        let providers = AIProvider.selectable(includesLocalCLI: true)
+        #expect(providers.contains(.claudeCodeCLI))
+        #expect(providers.contains(.codexCLI))
+    }
+
+    @Test("Codex는 모델 칸이 비어도 된다")
+    func codexDoesNotRequireModel() {
+        // 유효한 모델 이름이 계정 종류와 CLI 버전에 따라 달라 앱이 고를 수 없다.
+        #expect(!AIProvider.codexCLI.requiresModel)
+        #expect(AIProvider.claudeCodeCLI.requiresModel)
+        #expect(AIProvider.anthropic.requiresModel)
+    }
+}
+
+// MARK: - CLI 자식 프로세스 PATH
+
+@Suite("CLI 자식 프로세스 PATH")
+struct CLISearchPathTests {
+    @Test("실행 파일이 있는 디렉터리를 맨 앞에 둔다")
+    func putsExecutableDirectoryFirst() {
+        // npm으로 깐 CLI는 `#!/usr/bin/env node` 셰방이라 같은 디렉터리의 node를 찾아야 한다.
+        let path = AICLIClient.searchPath(forExecutableAt: "/opt/tools/bin/codex")
+        #expect(path.hasPrefix("/opt/tools/bin:"))
+    }
+
+    @Test("같은 디렉터리를 두 번 넣지 않는다")
+    func removesDuplicates() {
+        let path = AICLIClient.searchPath(forExecutableAt: "/usr/bin/claude")
+        let directories = path.split(separator: ":").map(String.init)
+        #expect(directories.filter { $0 == "/usr/bin" }.count == 1)
+        #expect(!directories.contains(""))
+    }
+}
+
+// MARK: - Codex 스트림 해석
+
+@Suite("Codex 스트림 해석")
+struct CodexStreamParserTests {
+    private func event(_ line: String) -> AICLIStreamParser.Event {
+        AICLIStreamParser.event(from: line, tool: .codex)
+    }
+
+    @Test("agent_message가 본문이다")
+    func agentMessageIsAnswer() {
+        let line = #"{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"1\n2"}}"#
+        #expect(event(line) == .text("1\n2"))
+    }
+
+    @Test("item의 error는 경고이므로 실패로 올리지 않는다")
+    func itemErrorIsWarning() {
+        // 스킬 예산·훅 타임아웃 조정 같은 경고가 이 형태로 온다. 실패로 뒤집으면
+        // 정상 응답이 오류 배너로 바뀐다(실측에서 매 요청에 두 건씩 왔다).
+        let line = #"{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Exceeded skills context budget."}}"#
+        #expect(event(line) == .ignored)
+    }
+
+    @Test("turn.completed가 종료다")
+    func turnCompletedFinishes() {
+        #expect(event(#"{"type":"turn.completed","usage":{"input_tokens":10}}"#) == .done)
+    }
+
+    @Test("turn.failed의 겹싼 JSON에서 사람이 읽을 문장만 꺼낸다")
+    func unwrapsNestedFailureMessage() {
+        // Codex는 오류 문구 안에 JSON을 문자열로 다시 감아 넣는다. 그대로 두면
+        // 배너에 이스케이프된 JSON이 나온다.
+        let inner = #"{\"type\":\"error\",\"status\":400,\"error\":{\"type\":\"invalid_request_error\",\"message\":\"The 'x' model is not supported\"}}"#
+        let line = #"{"type":"turn.failed","error":{"message":"\#(inner)"}}"#
+        #expect(event(line) == .failure("The 'x' model is not supported"))
+    }
+
+    @Test("최상위 error도 실패다")
+    func topLevelErrorFails() {
+        #expect(event(#"{"type":"error","message":"boom"}"#) == .failure("boom"))
+    }
+
+    @Test("진행 이벤트와 비JSON 줄은 무시한다")
+    func ignoresNoise() {
+        #expect(event(#"{"type":"thread.started","thread_id":"a"}"#) == .ignored)
+        #expect(event(#"{"type":"turn.started"}"#) == .ignored)
+        #expect(event("Reading additional input from stdin...") == .ignored)
+    }
+}
+
+// MARK: - Codex 명령 조립
+
+@Suite("Codex 명령 조립")
+struct CodexArgumentsTests {
+    private let messages = [AIChatMessage(role: .user, text: "이 화면 요약해줘")]
+
+    @Test("읽기 전용 샌드박스로 실행하고 세션을 남기지 않는다")
+    func safeDefaults() {
+        let arguments = AICLIClient.arguments(
+            tool: .codex, model: "", systemPrompt: "규칙", messages: messages
+        )
+        #expect(arguments.first == "exec")
+        #expect(arguments.contains("--json"))
+        #expect(arguments.contains("--sandbox"))
+        #expect(arguments.contains("read-only"))
+        #expect(arguments.contains("--ephemeral"))
+        #expect(arguments.contains("--skip-git-repo-check"))
+        // 모델이 비면 넘기지 않는다. CLI 자기 설정을 쓴다.
+        #expect(!arguments.contains("--model"))
+        // 규칙과 대화가 한 프롬프트로 들어간다 — Codex에는 append-system-prompt가 없다.
+        #expect(arguments.last?.contains("규칙") == true)
+        #expect(arguments.last?.contains("이 화면 요약해줘") == true)
+    }
+
+    @Test("모델을 채우면 그대로 넘긴다")
+    func passesModelWhenGiven() {
+        let arguments = AICLIClient.arguments(
+            tool: .codex, model: "o3", systemPrompt: "규칙", messages: messages
+        )
+        #expect(arguments.contains("--model"))
+        #expect(arguments.contains("o3"))
+    }
+
+    @Test("Codex는 모델 없이도 실행을 만들고 Claude는 거부한다")
+    func modelRequirementFollowsTool() throws {
+        let invocation = try AICLIClient.makeInvocation(
+            tool: .codex, executablePath: "/bin/echo", model: " ",
+            systemPrompt: "s", messages: messages
+        )
+        #expect(invocation.tool == .codex)
+        #expect(!invocation.searchPath.isEmpty)
+
+        #expect(throws: AIChatError.missingModel) {
+            try AICLIClient.makeInvocation(
+                tool: .claudeCode, executablePath: "/bin/echo", model: " ",
+                systemPrompt: "s", messages: messages
+            )
+        }
+    }
+}
+
+// MARK: - 항목 설명
+
+@Suite("항목 설명", .serialized)
+@MainActor
+struct ItemExplanationStoreTests {
+    private let item = CleanableItem(
+        name: "Gradle 캐시",
+        path: URL(fileURLWithPath: "/tmp/disktidy-gradle"),
+        sizeBytes: 5_000_000_000,
+        modifiedDate: nil
+    )
+    private let localSettings = AISettings(provider: .ollama)
+
+    private var subject: ExplanationSubject {
+        ExplanationSubject(item: item, action: "휴지통으로 이동 (되돌릴 수 있음)")
+    }
+
+    private func makeStore(body: String, status: Int = 200) -> ItemExplanationStore {
+        ItemExplanationStore(client: StubURLProtocol.makeClient(status: status, body: body))
+    }
+
+    private var answerBody: String {
+        """
+        data: {"choices":[{"delta":{"content":"빌드 캐시입니다."}}]}
+
+        data: [DONE]
+
+        """
+    }
+
+    @Test("항목을 대상으로 옮길 때 경로를 캐시 키로 쓴다")
+    func subjectKeysOnPath() {
+        // `CleanableItem.id`는 매번 새로 만드는 UUID라서 id로 캐시하면 새로고침마다
+        // 같은 폴더를 다시 물어본다.
+        let rescanned = CleanableItem(name: item.name, path: item.path, sizeBytes: 1)
+        #expect(subject.key == item.path.path)
+        #expect(ExplanationSubject(item: rescanned, action: "삭제").key == subject.key)
+        #expect(rescanned.id != item.id)
+    }
+
+    @Test("질문에 화면과 항목 사실을 담는다")
+    func questionCarriesFacts() {
+        let question = ItemExplanationStore.question(for: subject, screenTitle: "Android 캐시")
+        #expect(question.contains("화면: Android 캐시"))
+        #expect(question.contains("항목: Gradle 캐시"))
+        #expect(question.contains("/tmp/disktidy-gradle"))
+        // 정리 방식을 알려 주지 않으면 되돌릴 수 있는지를 모델이 지어낸다.
+        #expect(question.contains("휴지통으로 이동 (되돌릴 수 있음)"))
+        // 수정일이 없으면 그 줄을 넣지 않는다. 빈 값을 넣으면 모델이 그것을 근거로 삼는다.
+        #expect(!question.contains("마지막 수정"))
+    }
+
+    @Test("무엇인지를 먼저 답하게 지시한다")
+    func systemPromptAsksWhatItIsFirst() {
+        // 잃는 것을 먼저 쓰게 하면 정작 이게 무엇인지가 뒤로 밀려, 사용자는 처음 보는
+        // 이름을 그대로 둔 채 위험 문구만 읽게 된다.
+        let prompt = ItemExplanationStore.systemPrompt
+        let whatItIs = try? #require(prompt.range(of: "무엇인지"))
+        let recoverable = prompt.range(of: "다시 만들어지는지")
+        #expect(whatItIs != nil)
+        #expect(recoverable != nil)
+        if let whatItIs, let recoverable {
+            #expect(whatItIs.lowerBound < recoverable.lowerBound)
+        }
+    }
+
+    @Test("빠른 모델이 있으면 그것으로 바꿔 보낸다")
+    func usesFastModel() {
+        #expect(AISettings(provider: .claudeCodeCLI).usingFastModel().model == "haiku")
+        // 이름을 앱이 확인할 수 없는 제공자는 사용자가 고른 모델을 그대로 쓴다 —
+        // 틀린 모델 ID를 하드코딩하면 설명이 통째로 실패한다.
+        let http = AISettings(
+            provider: .anthropic, baseURL: "https://api.anthropic.com", model: "claude-sonnet-5"
+        )
+        #expect(http.usingFastModel().model == "claude-sonnet-5")
+        #expect(AISettings(provider: .codexCLI).usingFastModel().model.isEmpty)
+    }
+
+    @Test("설명을 받아 키로 캐시한다")
+    func cachesByKey() async {
+        let store = makeStore(body: answerBody)
+        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+
+        #expect(await waitUntil { store.state(for: subject) == .ready("빌드 캐시입니다.") })
+
+        // 다시 물어도 캐시가 그대로 남는다.
+        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        #expect(store.state(for: subject) == .ready("빌드 캐시입니다."))
+    }
+
+    @Test("잊으면 다시 물을 수 있다")
+    func forgetClearsCache() async {
+        let store = makeStore(body: answerBody)
+        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        #expect(await waitUntil { store.state(for: subject) != nil })
+
+        store.forget(subject)
+        #expect(store.state(for: subject) == nil)
+    }
+
+    @Test("실패는 사유를 남긴다")
+    func reportsFailure() async {
+        let store = makeStore(body: #"{"error":{"message":"Incorrect API key"}}"#, status: 401)
+        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+
+        #expect(await waitUntil {
+            if case .failed(let message) = store.state(for: subject) {
+                return message.contains("Incorrect API key")
+            }
+            return false
+        })
+    }
+
+    @Test("설정이 잘못되면 요청을 만들지 않고 사유를 남긴다")
+    func rejectsBadSettings() {
+        let store = ItemExplanationStore()
+        store.explain(
+            subject,
+            screenTitle: "Android 캐시",
+            settings: AISettings(provider: .anthropic),
+            apiKey: nil
+        )
+        if case .failed(let message) = store.state(for: subject) {
+            #expect(message == AIChatError.missingAPIKey.message)
+        } else {
+            Issue.record("실패 상태여야 한다")
+        }
+    }
+}

@@ -61,28 +61,44 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 
 **모델은 드롭다운에서 고른다.** 설정 화면이 열릴 때 `GET /v1/models`로 목록을 받아 온다(두 와이어 포맷이 같은 응답 형식을 쓴다). 임베딩·음성·이미지·모더레이션 모델은 골라 봐야 실패하므로 목록에서 뺀다. 사내 게이트웨이나 프리뷰 모델처럼 목록에 없는 이름을 써야 하면 **직접 입력**을 켠다. 목록 조회는 모델 이름을 요구하지 않는다 — 이름을 몰라서 쓰는 기능이기 때문이다.
 
-**배포판은 API 키만 지원한다.** 구독 계정(Claude Pro/Max, ChatGPT Plus/Pro) 로그인을 배포판에 넣지 않았다. Anthropic은 서드파티 앱이 claude.ai 로그인을 제공하거나 Free/Pro/Max 자격증명으로 요청을 대행하는 것을 [명시적으로 금지](https://code.claude.com/docs/en/legal-and-compliance)하고 사전 통보 없이 차단할 수 있다고 밝히고 있으며, ChatGPT 구독도 API 사용량을 포함하지 않는다(별도 과금). 키 없이 쓰려면 Ollama 같은 로컬 제공자를 고른다.
+**기본은 API 키다.** 앱이 구독 자격증명을 대행하는 방식은 넣지 않았다. Anthropic은 서드파티 앱이 claude.ai 로그인을 제공하거나 Free/Pro/Max 자격증명으로 요청을 대행하는 것을 [명시적으로 금지](https://code.claude.com/docs/en/legal-and-compliance)하고 사전 통보 없이 차단할 수 있다고 밝히고 있으며, ChatGPT 구독도 API 사용량을 포함하지 않는다(별도 과금). 키 없이 쓰려면 Ollama 같은 로컬 제공자를 고르거나, 아래 로컬 CLI 경로를 직접 켠다.
 
-### 개발 빌드 전용: CLI 구독 로그인
+### 로컬 CLI 제공자 (옵트인)
 
-`swift build`(디버그) 빌드에서만 제공자 목록에 **"Claude Code CLI · 구독 로그인 (개발 빌드 전용)"** 이 나타난다. 본인 테스트용 경로다.
+설정 → **로컬 CLI 제공자**를 켜면 제공자 목록에 두 개가 추가된다. 기본은 꺼져 있고, 켤 때 확인을 한 번 받는다.
 
-동작은 단순하다. 이미 로그인된 공식 `claude` CLI를 그대로 실행하고 stdout을 답변으로 쓴다.
+- **Claude Code CLI · 구독 로그인**
+- **Codex CLI · 구독 로그인**
+
+이미 로그인된 공식 CLI를 자식 프로세스로 실행하고 그 출력을 답변으로 쓴다.
 
 ```
-claude -p <대화 전문> --model sonnet --output-format text \
+claude -p <대화 전문> --model sonnet \
+       --output-format stream-json --include-partial-messages --verbose \
        --append-system-prompt <화면 스냅샷 포함 시스템 프롬프트> \
        --disallowed-tools Bash Edit Write NotebookEdit WebFetch WebSearch Task Read Glob Grep \
        --strict-mcp-config
+
+codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
+       <규칙 + 화면 스냅샷 + 대화 전문>
 ```
 
 **하지 않는 것**이 중요하다. 구독 OAuth 토큰을 읽지 않고, 헤더를 위장하지도 않는다. 그 방식은 제공자가 서버에서 차단하고 계정 정지 사유다. 여기서는 사용자가 터미널에서 직접 치는 명령을 같은 자격증명으로 실행할 뿐이며, 앱은 자격증명을 보지도 저장하지도 않는다.
 
-경계 세 개:
+그래도 **요청은 당신의 구독으로 나간다.** 각 제공자 약관에서 허용되는지는 직접 확인해야 한다 — 그래서 기본으로 숨기고 켤 때 확인을 받는다. App Store 배포에는 쓸 수 없다(샌드박스가 외부 실행 파일 실행을 막는다). DMG 직접 배포에서만 동작한다.
 
-- **도구를 전부 막는다.** 화면 스냅샷을 이미 프롬프트에 담아 넘기므로 도구가 필요 없고, 열어 두면 이 앱이 사용자 파일을 고치거나 명령을 실행하는 경로가 된다. `--strict-mcp-config`로 전역 MCP 서버도 끌어오지 않는다.
+경계:
+
+- **Claude Code는 도구를 전부 막는다.** 화면 스냅샷을 이미 프롬프트에 담아 넘기므로 도구가 필요 없고, 열어 두면 이 앱이 사용자 파일을 고치거나 명령을 실행하는 경로가 된다. `--strict-mcp-config`로 전역 MCP 서버도 끌어오지 않는다.
+- **Codex는 읽기 전용 샌드박스**(`--sandbox read-only`)로 돌린다. Codex에는 도구를 통째로 끄는 스위치가 없어서, 모델이 명령을 실행해도 쓰기를 막는 쪽으로 경계를 세운다. `--ephemeral`로 세션 파일도 남기지 않는다.
 - **작업 디렉터리는 `$TMPDIR`.** 실수로 파일을 건드려도 저장소가 아니다.
 - **180초 타임아웃.** 로그인이 만료된 CLI에 영구히 매달리지 않는다.
+
+**스트리밍은 도구마다 다르다.** Claude Code는 조각 단위로 흘려 받아 실시간으로 써진다(`--include-partial-messages`가 없으면 블록 완성본만 와서 한 덩어리가 된다). Codex는 `codex exec --json`에 델타 옵션이 없어 완성된 답변이 한 번에 온다 — 그동안 답변 자리에 진행 표시가 뜬다.
+
+**모델**: Claude Code는 CLI 별칭(`sonnet`·`opus`·`haiku`)을 쓴다. Codex는 모델 칸을 **비워 두면** CLI 자기 설정(`~/.codex/config.toml`)의 모델을 쓴다 — 유효한 이름이 계정 종류와 CLI 버전에 따라 달라서 앱이 고르지 않는다.
+
+**실행 파일 경로**: 터미널에서 CLI에 한 번 로그인한 뒤 `which claude`(또는 `which codex`) 결과를 설정의 **CLI 실행 파일 경로**에 넣는다. 기본값은 흔한 설치 위치와 nvm 버전 디렉터리를 훑어 채운다 — GUI로 실행된 앱의 `PATH`에는 `/usr/bin:/bin` 정도만 있어서 이름만으로는 찾지 못한다. npm으로 깐 CLI는 `#!/usr/bin/env node` 셰방이라 `node`도 찾아야 하므로, 자식 프로세스의 `PATH` 맨 앞에 **실행 파일이 있는 디렉터리**를 넣어 준다.
 
 준비: 터미널에서 `claude`를 한 번 실행해 로그인해 두고, 설정 탭의 **CLI 실행 파일 경로**에 `which claude` 결과를 넣는다(기본값은 `~/.local/bin/claude` 등 흔한 위치를 훑어 채운다 — GUI로 실행한 앱의 `PATH`는 `/usr/bin:/bin:/usr/sbin:/sbin`뿐이라 자동으로 찾지 못한다). 모델은 CLI 별칭(`sonnet` · `opus` · `haiku`) 드롭다운에서 고른다.
 
