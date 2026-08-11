@@ -1449,7 +1449,7 @@ struct CodexArgumentsTests {
             systemPrompt: "s", messages: messages
         )
         #expect(invocation.tool == .codex)
-        #expect(!invocation.searchPath.isEmpty)
+        #expect(invocation.environment["PATH"]?.isEmpty == false)
 
         #expect(throws: AIChatError.missingModel) {
             try AICLIClient.makeInvocation(
@@ -1587,5 +1587,149 @@ struct ItemExplanationStoreTests {
         } else {
             Issue.record("실패 상태여야 한다")
         }
+    }
+}
+
+// MARK: - 앱이 아는 항목
+
+@Suite("앱이 아는 항목")
+struct KnownItemCatalogTests {
+    private let home = NSHomeDirectory()
+
+    private func description(_ path: String) -> String? {
+        KnownItemCatalog.description(for: URL(fileURLWithPath: path))
+    }
+
+    @Test("스캐너가 넣는 경로는 앱이 직접 설명한다")
+    func knowsScannedPaths() {
+        #expect(description("\(home)/.gradle/caches") != nil)
+        #expect(description("\(home)/.gradle/wrapper/dists") != nil)
+        #expect(description("\(home)/Library/Developer/Xcode/DerivedData") != nil)
+        #expect(description("\(home)/Library/Caches") != nil)
+        #expect(description("\(home)/Projects/MyApp/node_modules") != nil)
+    }
+
+    @Test("좁은 규칙이 넓은 규칙보다 먼저 맞는다")
+    func specificRulesWinFirst() {
+        // Archives를 DerivedData 규칙이 먼저 잡으면 "다음 빌드에서 다시 만들어진다"고
+        // 말하게 된다 — 아카이브는 다시 만들 수 없다.
+        let archives = description("\(home)/Library/Developer/Xcode/Archives/2026-08-11")
+        #expect(archives?.contains("dSYM") == true)
+        #expect(archives?.contains("다시 만들 수 없") == true)
+
+        // Gradle 캐시가 `/Library/Caches` 규칙에 먼저 걸리지 않아야 한다.
+        #expect(description("\(home)/.gradle/caches")?.contains("Gradle") == true)
+        // Homebrew 캐시도 일반 캐시 설명으로 뭉개지지 않는다.
+        #expect(description("\(home)/Library/Caches/Homebrew")?.contains("Homebrew") == true)
+    }
+
+    @Test("모르는 경로는 AI에게 넘긴다")
+    func unknownPathsFallThrough() {
+        #expect(description("\(home)/Downloads/영상.mov") == nil)
+        #expect(description("/var/folders/ab/T/tmp1234") == nil)
+    }
+
+    @Test("아는 항목은 AI에게 묻지 않고 즉시 답한다")
+    @MainActor
+    func knownItemsSkipTheModel() {
+        let item = CleanableItem(
+            name: "Gradle 캐시",
+            path: URL(fileURLWithPath: "\(home)/.gradle/caches"),
+            sizeBytes: 5_000_000_000
+        )
+        let subject = ExplanationSubject(item: item, action: "휴지통으로 이동")
+        #expect(subject.knownDescription != nil)
+
+        // 요청을 만들지 않으므로 AI 상태가 생기지 않는다. 화면은 `knownDescription`을 그린다.
+        let store = ItemExplanationStore()
+        let badSettings = AISettings(provider: .anthropic)   // 키가 없어 요청하면 실패할 설정
+        store.explain(subject, screenTitle: "Android 캐시", settings: badSettings, apiKey: nil)
+        // 요청을 시도했다면 `missingAPIKey`로 실패 상태가 남았을 것이다.
+        #expect(store.state(for: subject) == nil)
+
+        // 사용자가 직접 요청하면 아는 항목도 AI에게 묻는다.
+        store.explain(
+            subject, screenTitle: "Android 캐시", settings: badSettings, apiKey: nil, force: true
+        )
+        #expect(store.state(for: subject) == .failed(AIChatError.missingAPIKey.message))
+    }
+}
+
+// MARK: - 설명 요청 환경
+
+@Suite("설명 요청 환경")
+struct FastExplanationEnvironmentTests {
+    @Test("설명 요청은 사고 블록을 끈다")
+    func disablesThinkingForExplanations() throws {
+        // 세 문장 설명에 모델이 사고 블록을 먼저 흘리면 그게 지연의 대부분이다.
+        // 실측(Claude Code CLI · haiku): 첫 텍스트 9.20s → 2.73s.
+        #expect(ItemExplanationStore.fastEnvironment["MAX_THINKING_TOKENS"] == "0")
+
+        let invocation = try AICLIClient.makeInvocation(
+            tool: .claudeCode,
+            executablePath: "/bin/echo",
+            model: "haiku",
+            systemPrompt: "s",
+            messages: [AIChatMessage(role: .user, text: "q")],
+            environmentOverrides: ItemExplanationStore.fastEnvironment
+        )
+        #expect(invocation.environment["MAX_THINKING_TOKENS"] == "0")
+        // PATH를 덮어쓰지 않는다. npm 셰방이 node를 찾아야 한다.
+        #expect(invocation.environment["PATH"]?.contains("/bin") == true)
+    }
+
+    @Test("대화는 사고 블록을 끄지 않는다")
+    func keepsThinkingForChat() throws {
+        // 대화에서는 생각하는 편이 답의 품질에 도움이 된다.
+        let invocation = try AICLIClient.makeInvocation(
+            tool: .claudeCode,
+            executablePath: "/bin/echo",
+            model: "sonnet",
+            systemPrompt: "s",
+            messages: [AIChatMessage(role: .user, text: "q")]
+        )
+        #expect(invocation.environment["MAX_THINKING_TOKENS"] == nil)
+    }
+}
+
+// MARK: - 앱이 아는 프로세스
+
+@Suite("앱이 아는 프로세스")
+struct KnownProcessCatalogTests {
+    @Test("이름이 곧 정체인 데몬은 앱이 설명한다")
+    func knowsSystemDaemons() {
+        // 화면에서 실제로 본 이름. AI에게 물어 2.7초를 쓸 이유가 없다.
+        #expect(KnownItemCatalog.description(forProcessNamed: "remotemanagementd") != nil)
+        #expect(KnownItemCatalog.description(forProcessNamed: "launchd") != nil)
+        #expect(KnownItemCatalog.description(forProcessNamed: "WindowServer") != nil)
+    }
+
+    @Test("접두사 변형도 잡는다")
+    func matchesPrefixVariants() {
+        // `mdworker_shared`·`mds_stores`처럼 뒤에 붙는 형태가 많다.
+        #expect(KnownItemCatalog.description(forProcessNamed: "mdworker_shared") != nil)
+        #expect(KnownItemCatalog.description(forProcessNamed: "mds_stores") != nil)
+        // 대소문자를 가리지 않는다.
+        #expect(KnownItemCatalog.description(forProcessNamed: "windowserver") != nil)
+    }
+
+    @Test("좁은 접두사가 먼저 맞는다")
+    func narrowPrefixWinsFirst() {
+        // `mdworker`가 `mds`보다 앞이어야 색인 작업자 설명이 나온다.
+        let worker = KnownItemCatalog.description(forProcessNamed: "mdworker")
+        #expect(worker?.contains("작업자") == true)
+    }
+
+    @Test("정체를 확정할 수 없는 이름은 그렇다고 말한다")
+    func admitsAmbiguousNames() {
+        // node·java는 무엇이든일 수 있다. 단정하면 사용자가 필요한 프로세스를 죽인다.
+        #expect(KnownItemCatalog.description(forProcessNamed: "node")?.contains("확정할 수 없") == true)
+        #expect(KnownItemCatalog.description(forProcessNamed: "java")?.contains("확정할 수 없") == true)
+    }
+
+    @Test("모르는 프로세스는 AI에게 넘긴다")
+    func unknownProcessesFallThrough() {
+        #expect(KnownItemCatalog.description(forProcessNamed: "com.example.MyHelper") == nil)
+        #expect(KnownItemCatalog.description(forProcessNamed: "") == nil)
     }
 }

@@ -59,7 +59,14 @@ struct SimulatorTabView: View {
                                     "크기: \(item.sizeString)",
                                     "마지막 사용: \(item.lastUsedString)",
                                     "이 화면의 정리 방식: simctl delete로 완전 삭제 (되돌릴 수 없음)",
-                                ]
+                                ],
+                                // 시뮬레이터 기기가 무엇인지는 앱이 안다. 물어볼 이유가 없다.
+                                knownDescription: """
+                                Xcode가 만든 iOS 시뮬레이터 기기입니다. 그 기기에 설치한 앱과 앱 \
+                                데이터, 로그인 상태, 스크린샷·로그가 들어 있습니다. 삭제는 \
+                                `simctl delete`로 즉시 지우며 휴지통을 거치지 않습니다 — 기기는 \
+                                Xcode에서 다시 만들 수 있지만 안에 있던 데이터는 돌아오지 않습니다.
+                                """
                             ),
                             screenTitle: "시뮬레이터"
                         )

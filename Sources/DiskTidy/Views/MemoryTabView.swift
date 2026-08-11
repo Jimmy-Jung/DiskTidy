@@ -236,7 +236,11 @@ private struct ProcessList: View {
                                 process.isTerminable
                                     ? "이 화면의 정리 방식: SIGTERM·SIGKILL로 종료 (되돌릴 수 없음, 도구가 다시 띄울 수 있음)"
                                     : "이 화면에서는 종료할 수 없고 표시만 한다",
-                            ]
+                            ],
+                            // 이름이 곧 정체인 데몬은 앱이 안다. AI에게 물을 이유가 없다.
+                            knownDescription: KnownItemCatalog.description(
+                                forProcessNamed: process.displayName
+                            )
                         ),
                         screenTitle: "개발 데몬"
                     )

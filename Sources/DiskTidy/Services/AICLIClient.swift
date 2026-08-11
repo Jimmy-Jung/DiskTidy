@@ -21,8 +21,8 @@ struct AICLIClient {
         let arguments: [String]
         /// 실수로 파일을 건드려도 저장소가 아니라 임시 디렉터리에서 일어나게 한다.
         let workingDirectory: URL
-        /// 자식에게 물려줄 `PATH`.
-        let searchPath: String
+        /// 자식에게 덮어써 물려줄 환경 변수. 물려받은 환경 위에 얹힌다.
+        let environment: [String: String]
     }
 
     private let run: @Sendable (Invocation) -> AsyncStream<ShellStreamEvent>
@@ -33,7 +33,7 @@ struct AICLIClient {
                 invocation.executable,
                 invocation.arguments,
                 workingDirectory: invocation.workingDirectory,
-                environment: ["PATH": invocation.searchPath],
+                environment: invocation.environment,
                 timeout: AICLIClient.timeout
             )
         }
@@ -46,7 +46,8 @@ struct AICLIClient {
         executablePath: String,
         model: String,
         systemPrompt: String,
-        messages: [AIChatMessage]
+        messages: [AIChatMessage],
+        environmentOverrides: [String: String] = [:]
     ) throws -> Invocation {
         let path = executablePath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else {
@@ -66,7 +67,8 @@ struct AICLIClient {
                 messages: messages
             ),
             workingDirectory: URL(fileURLWithPath: NSTemporaryDirectory()),
-            searchPath: searchPath(forExecutableAt: path)
+            environment: ["PATH": searchPath(forExecutableAt: path)]
+                .merging(environmentOverrides) { _, override in override }
         )
     }
 

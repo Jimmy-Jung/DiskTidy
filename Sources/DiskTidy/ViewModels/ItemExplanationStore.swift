@@ -13,6 +13,22 @@ struct ExplanationSubject: Equatable {
     let subtitle: String?
     /// 프롬프트에 그대로 들어갈 사실들. 모델이 이것만 근거로 삼는다.
     let facts: [String]
+    /// 앱이 이미 아는 항목이면 그 설명. 이 값이 있으면 **AI에게 묻지 않는다.**
+    let knownDescription: String?
+
+    init(
+        key: String,
+        title: String,
+        subtitle: String?,
+        facts: [String],
+        knownDescription: String? = nil
+    ) {
+        self.key = key
+        self.title = title
+        self.subtitle = subtitle
+        self.facts = facts
+        self.knownDescription = knownDescription
+    }
 }
 
 extension ExplanationSubject {
@@ -30,7 +46,9 @@ extension ExplanationSubject {
             key: item.path.path,
             title: item.name,
             subtitle: item.path.path,
-            facts: facts
+            facts: facts,
+            // 스캐너가 찾아서 넣은 경로는 앱이 이미 안다. 그것을 AI에게 다시 묻지 않는다.
+            knownDescription: KnownItemCatalog.description(for: item.path)
         )
     }
 }
@@ -58,17 +76,24 @@ final class ItemExplanationStore: ObservableObject {
         self.cliClient = cliClient
     }
 
+    /// **AI에게 받은** 설명의 상태. 앱이 아는 설명은 `subject.knownDescription`에 있고 요청이
+    /// 필요 없으므로 여기 섞지 않는다 — 섞으면 어느 쪽을 보고 있는지 화면에서 알 수 없다.
     func state(for subject: ExplanationSubject) -> State? {
         states[subject.key]
     }
 
-    /// 이미 받아 둔 설명이나 진행 중인 요청이 있으면 아무것도 하지 않는다.
+    /// 이미 받아 둔 설명·진행 중인 요청이 있으면 아무것도 하지 않는다.
+    ///
+    /// - Parameter force: 앱이 아는 항목에도 굳이 AI에게 묻는다. 사용자가 직접 요청했을
+    ///   때만 켠다 — 자동으로 켜면 아는 것을 다시 묻느라 프로세스를 띄운다.
     func explain(
         _ subject: ExplanationSubject,
         screenTitle: String,
         settings: AISettings,
-        apiKey: String?
+        apiKey: String?,
+        force: Bool = false
     ) {
+        guard force || subject.knownDescription == nil else { return }
         guard states[subject.key] == nil, tasks[subject.key] == nil else { return }
 
         // 전송 준비는 여기서 끝낸다. 실패 사유(경로 오류·CLI 없음)를 스트림 안에서 알리면
@@ -95,7 +120,8 @@ final class ItemExplanationStore: ObservableObject {
                     executablePath: fast.baseURL,
                     model: fast.model,
                     systemPrompt: Self.systemPrompt,
-                    messages: messages
+                    messages: messages,
+                    environmentOverrides: Self.fastEnvironment
                 )
                 let cliClient = self.cliClient
                 makeStream = { cliClient.stream(invocation) }
@@ -137,6 +163,19 @@ final class ItemExplanationStore: ObservableObject {
         tasks[key] = nil
         states[key] = state
     }
+
+    /// 설명 요청에만 얹는 환경 변수.
+    ///
+    /// 세 문장 설명에 모델이 사고 블록을 먼저 흘리면 그게 지연의 대부분이다. 실측
+    /// (Claude Code CLI · haiku, 프로세스 하나):
+    ///
+    /// | | 첫 텍스트 | 총시간 | thinking 조각 |
+    /// |---|---|---|---|
+    /// | 기본 | 9.20s | 11.94s | 15개 |
+    /// | `MAX_THINKING_TOKENS=0` | 2.73s | 7.17s | 0개 |
+    ///
+    /// 대화 챗봇에는 넣지 않는다 — 거기서는 생각하는 편이 답의 품질에 도움이 된다.
+    static let fastEnvironment = ["MAX_THINKING_TOKENS": "0"]
 
     // MARK: - 프롬프트 (순수 함수)
 
