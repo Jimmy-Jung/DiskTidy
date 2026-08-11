@@ -11,6 +11,9 @@ permissions:
 jobs:
   dmg:
     runs-on: macos-15
+    env:
+      # MarkdownView 3.0.0이 Swift tools 6.2 이상을 요구해 기본 Xcode(16.4)로는 해석 불가
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app
     steps:
       - uses: actions/checkout@v4
 
