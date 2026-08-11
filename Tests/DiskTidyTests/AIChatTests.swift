@@ -645,6 +645,10 @@ struct AICLIClientTests {
         #expect(arguments.contains("--append-system-prompt"))
         #expect(arguments.contains("시스템"))
         #expect(arguments.contains("--strict-mcp-config"))
+        // 이 셋이 다 있어야 조각 단위로 온다. 하나라도 빠지면 완료 시 한 덩어리로 온다.
+        #expect(arguments.contains("stream-json"))
+        #expect(arguments.contains("--include-partial-messages"))
+        #expect(arguments.contains("--verbose"))
         // 도구를 열어 두면 이 앱이 사용자 파일을 고치거나 명령을 실행하는 경로가 된다.
         #expect(arguments.contains("--disallowed-tools"))
         for tool in ["Bash", "Edit", "Write", "WebFetch", "Read"] {
@@ -688,27 +692,77 @@ struct AICLIClientTests {
         #expect(invocation.executable == "/bin/echo")
     }
 
-    @Test("성공한 실행의 출력을 답변 조각으로 올린다")
-    func yieldsOutput() async throws {
-        let client = AICLIClient(run: { _ in ShellResult(output: "  안녕하세요\n", exitCode: 0) })
-        let invocation = try AICLIClient.makeInvocation(
+    /// 정해진 줄을 순서대로 흘리는 대역.
+    private func makeClient(lines: [String], exitCode: Int32 = 0) -> AICLIClient {
+        AICLIClient(run: { _ in
+            AsyncStream { continuation in
+                for line in lines { continuation.yield(.line(line)) }
+                continuation.yield(.exit(exitCode))
+                continuation.finish()
+            }
+        })
+    }
+
+    private func makeInvocation() throws -> AICLIClient.Invocation {
+        try AICLIClient.makeInvocation(
             tool: .claudeCode, executablePath: "/bin/echo", model: "sonnet",
             systemPrompt: "s", messages: messages
         )
-
-        var chunks: [AIChatChunk] = []
-        for try await chunk in client.stream(invocation) { chunks.append(chunk) }
-        #expect(chunks == [.text("안녕하세요")])
     }
 
-    @Test("실패한 실행은 종료 코드와 출력을 실어 보고한다")
-    func reportsFailure() async throws {
-        let client = AICLIClient(run: { _ in
-            ShellResult(output: "Invalid API key · Please run /login", exitCode: 1)
-        })
-        let invocation = try AICLIClient.makeInvocation(
-            tool: .claudeCode, executablePath: "/bin/echo", model: "sonnet",
-            systemPrompt: "s", messages: messages
+    @Test("델타를 도착한 순서대로 조각으로 올린다")
+    func yieldsDeltasInOrder() async throws {
+        // 한 덩어리로 모아 올리면 실시간으로 써지는 효과가 사라진다.
+        let client = makeClient(lines: [
+            #"{"type":"system","subtype":"init"}"#,
+            delta(text: "안"),
+            delta(text: "녕"),
+            #"{"type":"result","subtype":"success","is_error":false,"result":"안녕"}"#,
+        ])
+
+        var chunks: [AIChatChunk] = []
+        for try await chunk in client.stream(try makeInvocation()) { chunks.append(chunk) }
+        #expect(chunks == [.text("안"), .text("녕")])
+    }
+
+    @Test("사고 과정과 완성본은 본문에 섞지 않는다")
+    func dropsThinkingAndCompletedBlocks() async throws {
+        // `thinking_delta`를 받으면 모델의 사고가 답변에 나오고, `assistant`까지 받으면
+        // 델타와 겹쳐 답변이 두 번 붙는다.
+        let client = makeClient(lines: [
+            #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"사용자가"}}}"#,
+            #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"signature_delta","signature":"Eu"}}}"#,
+            delta(text: "본문"),
+            #"{"type":"assistant","message":{"content":[{"type":"text","text":"본문"}]}}"#,
+            #"{"type":"result","subtype":"success","is_error":false,"result":"본문"}"#,
+        ])
+
+        var chunks: [AIChatChunk] = []
+        for try await chunk in client.stream(try makeInvocation()) { chunks.append(chunk) }
+        #expect(chunks == [.text("본문")])
+    }
+
+    @Test("절단 신호를 조각으로 올린다")
+    func surfacesTruncation() async throws {
+        let client = makeClient(lines: [
+            delta(text: "긴 답변"),
+            #"{"type":"stream_event","event":{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}}"#,
+            #"{"type":"result","subtype":"success","is_error":false,"result":"긴 답변"}"#,
+        ])
+
+        var chunks: [AIChatChunk] = []
+        for try await chunk in client.stream(try makeInvocation()) { chunks.append(chunk) }
+        #expect(chunks == [.text("긴 답변"), .truncated])
+    }
+
+    @Test("CLI가 보고한 실패 사유를 그대로 실어 보고한다")
+    func reportsReportedFailure() async throws {
+        // 종료 코드만으로는 로그인 만료인지 모델 이름이 틀린 것인지 구분할 수 없다.
+        let client = makeClient(
+            lines: [
+                #"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"Invalid API key · Please run /login"}"#
+            ],
+            exitCode: 1
         )
 
         await #expect(
@@ -716,21 +770,21 @@ struct AICLIClientTests {
                 exitCode: 1, message: "Invalid API key · Please run /login"
             )
         ) {
-            for try await _ in client.stream(invocation) {}
+            for try await _ in client.stream(try makeInvocation()) {}
         }
     }
 
-    @Test("출력이 비어 있으면 로그인 상태를 의심하도록 알린다")
-    func reportsEmptyOutput() async throws {
-        let client = AICLIClient(run: { _ in ShellResult(output: "", exitCode: 1) })
-        let invocation = try AICLIClient.makeInvocation(
-            tool: .claudeCode, executablePath: "/bin/echo", model: "sonnet",
-            systemPrompt: "s", messages: messages
-        )
+    @Test("사유 없이 실패하면 로그인 상태를 의심하도록 알린다")
+    func reportsBareFailure() async throws {
+        let client = makeClient(lines: [], exitCode: 1)
 
         await #expect(throws: AIChatError.cliFailed(exitCode: 1, message: "출력이 없습니다. 로그인 상태를 확인하세요.")) {
-            for try await _ in client.stream(invocation) {}
+            for try await _ in client.stream(try makeInvocation()) {}
         }
+    }
+
+    private func delta(text: String) -> String {
+        #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"\#(text)"}}}"#
     }
 }
 
@@ -853,89 +907,74 @@ struct ChatViewModelTests {
     }
 }
 
-// MARK: - 마크다운 표시
+// MARK: - 답변 따라 스크롤
 
-@Suite("마크다운 표시")
-struct MarkdownParserTests {
-    private func plain(_ text: String) -> String {
-        String(MarkdownParser.attributed(text).characters)
+@Suite("답변 따라 스크롤")
+struct TailFollowTrackerTests {
+    /// 뷰포트 400에 콘텐츠 1000, 바닥에 붙은 상태로 시작한다.
+    private func makeTrackerAtBottom() -> TailFollowTracker {
+        var tracker = TailFollowTracker()
+        _ = tracker.update(contentHeight: 1000, contentBottom: 400, viewportHeight: 400)
+        return tracker
     }
 
-    @Test("제목·글머리표·번호 목록을 블록으로 나눈다")
-    func splitsBlocks() {
-        let text = """
-        ## 메모리 상태
-        - 여유 0%
-        * 스왑 38 GB
-        1. 첫째
-        2) 둘째
-        """
-        #expect(MarkdownParser.blocks(text) == [
-            .heading(level: 2, text: "메모리 상태"),
-            .bullet("여유 0%"),
-            .bullet("스왑 38 GB"),
-            .numbered(marker: "1.", text: "첫째"),
-            .numbered(marker: "2.", text: "둘째"),
-        ])
+    @Test("답변이 자라면 바닥으로 따라간다")
+    func growingContentFollowsTail() {
+        var tracker = makeTrackerAtBottom()
+        // 조각이 도착해 100 자랐다. 바닥은 아직 뷰포트 아래에 있다.
+        let scrolls = tracker.update(contentHeight: 1100, contentBottom: 500, viewportHeight: 400)
+        #expect(scrolls)
+        #expect(tracker.followsTail)
     }
 
-    @Test("빈 줄로 문단을 나누고 문단 안 줄바꿈은 지킨다")
-    func splitsParagraphs() {
-        let text = "첫 줄\n둘째 줄\n\n다음 문단"
-        #expect(MarkdownParser.blocks(text) == [
-            .paragraph("첫 줄\n둘째 줄"),
-            .paragraph("다음 문단"),
-        ])
+    @Test("자라면서 바닥이 밀려나는 것을 사용자 스크롤로 오해하지 않는다")
+    func growthIsNotMistakenForUserScroll() {
+        var tracker = makeTrackerAtBottom()
+        // 임계값을 훌쩍 넘겨 밀려나도 따라가기는 유지해야 한다. 여기서 꺼지면
+        // 첫 조각에 곧바로 떨어져 나머지 답변을 손으로 따라가야 한다.
+        _ = tracker.update(contentHeight: 2000, contentBottom: 1400, viewportHeight: 400)
+        #expect(tracker.followsTail)
     }
 
-    @Test("`#`뒤에 공백이 없으면 제목이 아니다")
-    func hashTagIsNotHeading() {
-        #expect(MarkdownParser.blocks("#태그") == [.paragraph("#태그")])
-        #expect(MarkdownParser.blocks("####### 일곱개") == [.paragraph("####### 일곱개")])
+    @Test("사용자가 위로 스크롤하면 따라가기를 멈춘다")
+    func userScrollUpStopsFollowing() {
+        var tracker = makeTrackerAtBottom()
+        // 높이는 그대로인데 바닥까지의 거리만 벌어졌다 = 휠·트랙패드로 올렸다.
+        let scrollsOnUserScroll = tracker.update(
+            contentHeight: 1000, contentBottom: 700, viewportHeight: 400
+        )
+        #expect(!scrollsOnUserScroll)
+        #expect(!tracker.followsTail)
+
+        // 그 뒤 답변이 더 자라도 끌려가지 않는다.
+        let scrollsOnGrowth = tracker.update(
+            contentHeight: 1200, contentBottom: 900, viewportHeight: 400
+        )
+        #expect(!scrollsOnGrowth)
     }
 
-    @Test("코드 블록을 묶어 담는다")
-    func collectsCodeBlock() {
-        let text = "설명\n```\ndu -sk /tmp\nrm -rf x\n```\n끝"
-        #expect(MarkdownParser.blocks(text) == [
-            .paragraph("설명"),
-            .code("du -sk /tmp\nrm -rf x"),
-            .paragraph("끝"),
-        ])
+    @Test("바닥으로 돌아오면 다시 따라간다")
+    func returningToBottomReattaches() {
+        var tracker = makeTrackerAtBottom()
+        _ = tracker.update(contentHeight: 1000, contentBottom: 700, viewportHeight: 400)
+        #expect(!tracker.followsTail)
+
+        // 임계값 안까지 내려왔다.
+        _ = tracker.update(contentHeight: 1000, contentBottom: 410, viewportHeight: 400)
+        #expect(tracker.followsTail)
+
+        let scrolls = tracker.update(contentHeight: 1100, contentBottom: 510, viewportHeight: 400)
+        #expect(scrolls)
     }
 
-    @Test("스트리밍 중 닫히지 않은 코드 블록도 잃지 않는다")
-    func handlesUnterminatedCodeBlock() {
-        // 조각이 도착하는 중에는 닫는 ```가 아직 없다. 내용을 버리면 답변이 사라진다.
-        #expect(MarkdownParser.blocks("```\ndu -sk") == [.code("du -sk")])
-    }
+    @Test("새 질문을 보내면 따라가기를 되살린다")
+    func sendingRestoresFollowing() {
+        var tracker = makeTrackerAtBottom()
+        _ = tracker.update(contentHeight: 1000, contentBottom: 900, viewportHeight: 400)
+        #expect(!tracker.followsTail)
 
-    @Test("굵게·기울임·인라인 코드 기호는 화면에 남지 않는다")
-    func stripsInlineSyntax() {
-        #expect(plain("**개발 데몬 정리 화면.**") == "개발 데몬 정리 화면.")
-        #expect(plain("*기울임*") == "기울임")
-        #expect(plain("`du -sk`") == "du -sk")
-        #expect(plain("나머지는 **표시만** 가능") == "나머지는 표시만 가능")
-    }
-
-    @Test("파일 이름의 밑줄을 서식으로 먹지 않는다")
-    func keepsUnderscoresInFileNames() {
-        // 이 앱의 화면은 경로로 가득하다. node_modules가 "nodemodules"로 바뀌면 안 된다.
-        #expect(plain("node_modules_cache") == "node_modules_cache")
-        #expect(plain("DerivedData_old.zip") == "DerivedData_old.zip")
-    }
-
-    @Test("닫히지 않은 서식이 와도 글자를 잃지 않는다")
-    func survivesPartialSyntax() {
-        // 스트리밍 중 `**굵게`처럼 반쪽 문법이 도착한다.
-        #expect(plain("**굵게").contains("굵게"))
-        #expect(plain("절반 `코드").contains("코드"))
-    }
-
-    @Test("서식이 없는 답변은 문단 하나로 그린다")
-    func plainAnswerStaysOneParagraph() {
-        #expect(MarkdownParser.blocks("항목 3개입니다.") == [.paragraph("항목 3개입니다.")])
-        #expect(MarkdownParser.blocks("") == [])
+        tracker.followTail()
+        #expect(tracker.followsTail)
     }
 }
 

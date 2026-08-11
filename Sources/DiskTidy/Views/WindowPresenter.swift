@@ -22,8 +22,28 @@ enum WindowPresenter {
         UserDefaults.standard.object(forKey: alwaysOnTopKey) as? Bool ?? true
     }
 
+    /// 활성화가 아예 막힌 정책인지. 순수 함수로 떼어 둔다 — 이 판정을 빼먹으면
+    /// 개발 실행에서 키보드가 통째로 죽는다.
+    nonisolated static func needsActivationPolicyFix(
+        _ policy: NSApplication.ActivationPolicy
+    ) -> Bool {
+        policy == .prohibited
+    }
+
     /// 창을 앞으로 가져온다. 실행·재열기·메뉴바에서 열기 세 경로 모두 여기를 거친다.
     static func present(alwaysOnTop: Bool, retriesRemaining: Int = 5) {
+        // Info.plist 번들 없이 실행되면(Xcode의 SPM 실행, `swift run`) 활성화 정책이
+        // `.prohibited`가 된다. 그 상태에서는 앱이 활성화되지 못해 어떤 창도 key window가
+        // 되지 못하고, 마우스는 먹는데 키보드 입력만 통째로 안 된다 — 채팅 입력창뿐 아니라
+        // 설정 탭 입력란까지 전부. 실측: prohibited면 `isKeyWindow`·`isActive` 둘 다 false,
+        // `.accessory`로 올리면 둘 다 true.
+        //
+        // `.regular`가 아니라 `.accessory`로 올린다. 이 앱은 Dock 아이콘 없는 에이전트이고
+        // `.accessory`도 활성화와 key window를 허용한다.
+        if needsActivationPolicyFix(NSApp.activationPolicy()) {
+            NSApp.setActivationPolicy(.accessory)
+        }
+
         NSApp.activate(ignoringOtherApps: true)
 
         let windows = mainWindows

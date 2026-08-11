@@ -152,7 +152,7 @@ claude -p <대화 전문> --model sonnet --output-format text \
 
 ## 요구사항
 
-- macOS 13 이상
+- macOS 14 이상
 - Xcode 16 이상 (Swift Testing 사용)
 - 첫 실행 시 `~/Documents`, `~/Downloads` 등 접근에 대한 macOS 파일 접근 권한(TCC) 승인 필요
 
@@ -201,7 +201,7 @@ shasum -a 256 -c DiskTidy-1.0.dmg.sha256
 2. **시스템 설정 → 개인정보 보호 및 보안** 으로 이동
 3. 아래로 스크롤해 DiskTidy 항목의 **"확인 없이 열기"** 를 누른다
 
-**macOS 13~14** — `DiskTidy.app`을 **우클릭 → 열기** 로 한 번 실행하면 이후에는 그냥 열린다.
+**macOS 14 Sonoma** — `DiskTidy.app`을 **우클릭 → 열기** 로 한 번 실행하면 이후에는 그냥 열린다.
 
 **터미널로 처리** (개발자용, 어느 버전이든 동작):
 

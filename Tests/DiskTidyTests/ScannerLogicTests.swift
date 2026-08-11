@@ -145,6 +145,40 @@ struct ShellRunnerTests {
         #expect(result.output.contains("ok"))
     }
 
+    @Test("streamLines는 프로세스가 끝나기 전에 줄을 올린다", .timeLimit(.minutes(1)))
+    func streamLinesDeliversBeforeExit() async {
+        // 이것이 스트리밍 답변의 전제다. 종료를 기다렸다가 몰아서 올리면 답변이 한 번에
+        // 나타나고, 실시간으로 써지는 효과가 사라진다.
+        // 간격을 넉넉히 둔다. 테스트가 병렬로 도는 동안 첫 줄 전달이 스케줄링에 밀릴 수
+        // 있어서, 여유가 좁으면 스트리밍이 되는데도 실패한다.
+        let script = "printf 'first\\n'; sleep 2; printf 'second\\n'"
+        var events: [ShellStreamEvent] = []
+        var lineArrivals: [ContinuousClock.Instant] = []
+
+        for await event in ShellRunner.streamLines("/bin/sh", ["-c", script], timeout: 30) {
+            if case .line = event { lineArrivals.append(.now) }
+            events.append(event)
+        }
+
+        #expect(events == [.line("first"), .line("second"), .exit(0)])
+        // 두 줄의 **간격**을 본다. 절대 시간으로 재면 테스트가 병렬로 도는 동안 스케줄링이
+        // 밀려 첫 줄 도착이 늦어진 것을 스트리밍 실패로 오판한다. 종료를 기다렸다가
+        // 몰아서 올린다면 두 줄이 붙어서 오므로 간격이 사라진다.
+        #expect(lineArrivals.count == 2)
+        if lineArrivals.count == 2 {
+            #expect(lineArrivals[0].duration(to: lineArrivals[1]) > .milliseconds(800))
+        }
+    }
+
+    @Test("streamLines는 실행 실패를 종료 코드로 알린다")
+    func streamLinesReportsSpawnFailure() async {
+        var events: [ShellStreamEvent] = []
+        for await event in ShellRunner.streamLines("/nonexistent/binary", []) {
+            events.append(event)
+        }
+        #expect(events == [.exit(-1)])
+    }
+
     @Test("실패한 명령의 종료 코드를 돌려준다")
     func reportsFailureExitCode() {
         let result = ShellRunner.run("/bin/sh", ["-c", "exit 3"])

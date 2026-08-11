@@ -9,8 +9,8 @@ import Foundation
 /// - 배포 빌드에서는 `stream(_:)`이 곧바로 실패한다. 서드파티 앱이 사용자 구독으로 요청을
 ///   대행하는 것은 제공자 약관이 금지한다.
 ///
-/// 한계: 조각 단위 스트리밍을 하지 않는다 — 한 번에 받아 한 덩어리로 올린다.
-/// CLI의 stream-json 형식은 도구마다 달라서, 필요해지면 그때 도구별 파서를 붙인다.
+/// 답변은 조각 단위로 흘려 받는다. `--output-format stream-json`의 NDJSON을 줄마다
+/// 해석하며(`AICLIStreamParser`) 프로세스 종료를 기다리지 않는다.
 struct AICLIClient {
     /// CLI 응답을 기다리는 상한. 첫 토큰까지 수십 초가 걸리는 경우가 있어 넉넉히 둔다.
     static let timeout: TimeInterval = 180
@@ -22,11 +22,11 @@ struct AICLIClient {
         let workingDirectory: URL
     }
 
-    private let run: @Sendable (Invocation) -> ShellResult
+    private let run: @Sendable (Invocation) -> AsyncStream<ShellStreamEvent>
 
     init(
-        run: @escaping @Sendable (Invocation) -> ShellResult = { invocation in
-            ShellRunner.run(
+        run: @escaping @Sendable (Invocation) -> AsyncStream<ShellStreamEvent> = { invocation in
+            ShellRunner.streamLines(
                 invocation.executable,
                 invocation.arguments,
                 workingDirectory: invocation.workingDirectory,
@@ -69,28 +69,50 @@ struct AICLIClient {
             #if DEBUG
             let run = self.run
             let task = Task {
-                // CLI는 수십 초를 쓴다. 메인 스레드에서 기다리면 앱이 통째로 멈춘다.
-                let result = await Task.detached(priority: .userInitiated) {
-                    run(invocation)
-                }.value
+                // CLI가 보고한 실패 사유. 종료 코드보다 이쪽이 구체적이라 우선한다.
+                var reportedFailure: String?
+                var exitCode: Int32 = 0
+
+                for await event in run(invocation) {
+                    if Task.isCancelled {
+                        continuation.finish()
+                        return
+                    }
+                    switch event {
+                    case .line(let line):
+                        switch AICLIStreamParser.event(from: line) {
+                        case .text(let text): continuation.yield(.text(text))
+                        case .truncated: continuation.yield(.truncated)
+                        case .failure(let message): reportedFailure = message
+                        case .done, .ignored: continue
+                        }
+                    case .exit(let code):
+                        exitCode = code
+                    }
+                }
 
                 if Task.isCancelled {
                     continuation.finish()
                     return
                 }
-
-                let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard result.succeeded else {
-                    // stderr는 ShellRunner가 버리므로(파이프 교착 회피) stdout만 근거가 된다.
+                if let reportedFailure {
                     continuation.finish(
                         throwing: AIChatError.cliFailed(
-                            exitCode: result.exitCode,
-                            message: output.isEmpty ? "출력이 없습니다. 로그인 상태를 확인하세요." : output
+                            exitCode: exitCode, message: reportedFailure
                         )
                     )
                     return
                 }
-                if !output.isEmpty { continuation.yield(.text(output)) }
+                guard exitCode == 0 else {
+                    // stderr는 ShellRunner가 버리므로(파이프 교착 회피) 남은 근거가 없다.
+                    continuation.finish(
+                        throwing: AIChatError.cliFailed(
+                            exitCode: exitCode,
+                            message: "출력이 없습니다. 로그인 상태를 확인하세요."
+                        )
+                    )
+                    return
+                }
                 continuation.finish()
             }
             continuation.onTermination = { _ in task.cancel() }
@@ -120,7 +142,12 @@ struct AICLIClient {
             return [
                 "-p", transcript(messages),
                 "--model", model,
-                "--output-format", "text",
+                // 조각 단위로 받으려면 세 개가 다 필요하다. `stream-json`만 주면 CLI가
+                // 블록이 끝난 뒤 완성본(`assistant`)만 보내서 결국 한 덩어리로 온다.
+                // `--verbose`는 print 모드에서 stream-json을 쓸 때 CLI가 요구한다.
+                "--output-format", "stream-json",
+                "--include-partial-messages",
+                "--verbose",
                 "--append-system-prompt", systemPrompt,
                 // 화면 스냅샷을 이미 프롬프트에 담아 넘긴다. 도구는 필요 없고, 열어 두면
                 // 이 앱이 사용자 파일을 고치거나 명령을 실행하는 경로가 된다.

@@ -148,7 +148,7 @@ Three more guards apply:
 
 ## Requirements
 
-- macOS 13 or later
+- macOS 14 or later
 - Xcode 16 or later (Swift Testing)
 - macOS will prompt for file access (TCC) to `~/Documents`, `~/Downloads`, etc. on first run
 
@@ -197,7 +197,7 @@ This app is **ad-hoc signed (free) and therefore not notarized by Apple.** macOS
 2. Go to **System Settings → Privacy & Security**
 3. Scroll down to the DiskTidy entry and click **"Open Anyway"**
 
-**macOS 13–14** — **right-click → Open** once; subsequent launches work normally.
+**macOS 14 Sonoma** — **right-click → Open** once; subsequent launches work normally.
 
 **From the terminal** (works on any version):
 

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 
@@ -246,5 +247,86 @@ struct ModelFormattingTests {
     @Test("네비게이션 상태는 첫 탭에서 시작한다")
     func navigationStartsAtFirstTab() {
         #expect(AppNavigationState().selectedTab == 0)
+    }
+}
+
+// MARK: - 창 활성화 정책
+
+@Suite("창 활성화 정책")
+struct WindowPresenterActivationPolicyTests {
+    @Test("번들 없이 실행돼 활성화가 막힌 정책은 바로잡아야 한다")
+    func fixesProhibitedPolicy() {
+        // Info.plist 번들 없이 실행하면(Xcode의 SPM 실행, `swift run`) 정책이 `.prohibited`가
+        // 되고, 그러면 어떤 창도 key window가 못 되어 앱 전체에서 키보드 입력을 못 받는다.
+        #expect(WindowPresenter.needsActivationPolicyFix(.prohibited))
+    }
+
+    @Test("이미 활성화가 가능한 정책은 건드리지 않는다")
+    func leavesUsablePoliciesAlone() {
+        // `.accessory`는 Dock 아이콘 없이도 활성화와 key window를 허용한다. 이걸 `.regular`로
+        // 올리면 이 앱이 일부러 없앤 Dock 아이콘이 생긴다.
+        #expect(!WindowPresenter.needsActivationPolicyFix(.accessory))
+        #expect(!WindowPresenter.needsActivationPolicyFix(.regular))
+    }
+}
+
+// MARK: - Return 키로 보내기
+
+@Suite("Return 키로 보내기")
+struct ReturnKeySenderTests {
+    private let returnKey: UInt16 = 36
+
+    private func action(
+        keyCode: UInt16? = nil,
+        modifiers: NSEvent.ModifierFlags = [],
+        isComposing: Bool = false,
+        isEnabled: Bool = true
+    ) -> ReturnKeySender.Action {
+        ReturnKeySender.action(
+            keyCode: keyCode ?? returnKey,
+            modifiers: modifiers,
+            isComposing: isComposing,
+            isEnabled: isEnabled
+        )
+    }
+
+    @Test("맨 Return은 보내기다", arguments: [UInt16(36), UInt16(76)])
+    func plainReturnSends(keyCode: UInt16) {
+        #expect(action(keyCode: keyCode) == .send)
+    }
+
+    @Test("Shift+Return은 줄바꿈을 직접 넣는다")
+    func shiftReturnInsertsNewline() {
+        // macOS의 세로 TextField는 Shift+Return에 아무 반응이 없다. 흘려보내면 줄바꿈
+        // 수단이 아예 없어진다 — 맨 Return을 보내기로 가져갔기 때문이다.
+        #expect(action(modifiers: [.shift]) == .insertNewline)
+    }
+
+    @Test("다른 조합키가 붙은 Return은 넘긴다")
+    func modifiedReturnPassesThrough() {
+        // ⌘Return은 보내기 버튼의 단축키가 이미 처리한다.
+        #expect(action(modifiers: [.command]) == .pass)
+        #expect(action(modifiers: [.option]) == .pass)
+        #expect(action(modifiers: [.control]) == .pass)
+    }
+
+    @Test("한글 조합 중의 Return은 Shift 여부와 무관하게 넘긴다")
+    func composingReturnPassesThrough() {
+        // 가로채면 마지막 음절이 빠진 채로 전송되거나 확정이 사라진다.
+        #expect(action(isComposing: true) == .pass)
+        #expect(action(modifiers: [.shift], isComposing: true) == .pass)
+    }
+
+    @Test("입력창에 포커스가 없으면 아무 Return도 가로채지 않는다")
+    func disabledIgnoresEverything() {
+        // 설정 탭 입력란의 Return까지 먹으면 안 된다.
+        #expect(action(isEnabled: false) == .pass)
+        #expect(action(modifiers: [.shift], isEnabled: false) == .pass)
+    }
+
+    @Test("Return이 아닌 키는 건드리지 않는다")
+    func otherKeysPassThrough() {
+        #expect(action(keyCode: 0) == .pass)
+        #expect(action(keyCode: 49, modifiers: [.shift]) == .pass)
     }
 }

@@ -1,4 +1,49 @@
+import AppKit
 import SwiftUI
+
+/// 챗봇 패널 폭을 끌어 바꾸는 구분선.
+///
+/// 패널이 오른쪽에 있으므로 왼쪽으로 끌면 넓어진다. 그래서 이동량을 빼서 더한다.
+/// 끌기 시작한 폭을 따로 기억한다 — `translation`은 누적값이라 매 이벤트에 그대로
+/// 더하면 손이 조금만 움직여도 폭이 폭주한다.
+private struct ChatPanelDivider: View {
+    @Binding var width: Double
+
+    @State private var widthAtDragStart: Double?
+
+    /// 잡는 영역. 선은 1pt지만 그것만 노리게 하면 못 잡는다.
+    private static let grabWidth: CGFloat = 6
+
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(width: 1)
+            .frame(width: Self.grabWidth)
+            // 투명한 여백까지 눌리게 만든다. 이게 없으면 그린 1pt만 반응한다.
+            .contentShape(Rectangle())
+            // `push`/`pop` 대신 `set`을 쓴다. 창이 포커스를 잃어 나가는 이벤트를 놓치면
+            // push만 쌓여 커서가 리사이즈 모양으로 굳는다.
+            .onHover { isInside in
+                if isInside {
+                    NSCursor.resizeLeftRight.set()
+                } else {
+                    NSCursor.arrow.set()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        let start = widthAtDragStart ?? width
+                        widthAtDragStart = start
+                        width = min(
+                            max(start - value.translation.width, ChatPanelView.minimumWidth),
+                            ChatPanelView.maximumWidth
+                        )
+                    }
+                    .onEnded { _ in widthAtDragStart = nil }
+            )
+    }
+}
 
 private struct SidebarItem: Identifiable, Hashable {
     let id: Int
@@ -21,11 +66,15 @@ private let sidebarItems: [SidebarItem] = [
 ]
 
 struct ContentView: View {
+    /// 메뉴바 팝오버가 열리고 닫히는 감각에 맞춘다 — 짧게 밀려 들어오고 튀지 않는다.
+    private static let panelAnimation: Animation = .easeOut(duration: 0.22)
+
     @EnvironmentObject private var navState: AppNavigationState
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     // 기본값을 켜 둔다. 툴바 아이콘만으로는 기능이 있는 줄 모른다.
     @AppStorage("ChatPanelVisible") private var isChatVisible = true
     @AppStorage(WindowPresenter.alwaysOnTopKey) private var isAlwaysOnTop = true
+    @AppStorage("ChatPanelWidth") private var chatWidth = ChatPanelView.defaultWidth
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -38,14 +87,22 @@ struct ContentView: View {
                 detailView(for: navState.selectedTab ?? 0)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if isChatVisible {
-                    Divider()
-                    ChatPanelView()
+                    // 구분선과 패널을 한 덩어리로 묶어 함께 밀려 들어오게 한다.
+                    // 따로 두면 구분선만 먼저 나타나 선이 공중에 떠 보인다.
+                    HStack(spacing: 0) {
+                        ChatPanelDivider(width: $chatWidth)
+                        ChatPanelView(width: chatWidth)
+                    }
+                    .transition(.move(edge: .trailing))
                 }
             }
+            // 패널이 나타나고 사라지는 동안 본문 폭도 함께 움직여야 한다. 트랜지션만
+            // 걸면 패널은 밀려 나가는데 본문은 즉시 넓어져 한 프레임 어긋나 보인다.
+            .clipped()
             .toolbar {
                 ToolbarItem {
                     Button {
-                        isChatVisible.toggle()
+                        withAnimation(Self.panelAnimation) { isChatVisible.toggle() }
                     } label: {
                         Label("AI 도우미", systemImage: "bubble.left.and.bubble.right")
                     }
@@ -54,11 +111,12 @@ struct ContentView: View {
             }
         }
         // 패널을 펼치면 본문이 눌린다. 최소 너비를 패널 폭만큼 함께 넓힌다.
-        .frame(minWidth: isChatVisible ? 820 + ChatPanelView.width : 820, minHeight: 480)
+        // 사용자가 패널을 넓히면 창 최소 너비도 따라 넓어져 본문이 짜부라지지 않는다.
+        .frame(minWidth: isChatVisible ? 820 + chatWidth : 820, minHeight: 480)
         // 창이 실제로 생긴 뒤 한 번 더 올린다. 앱 델리게이트의 실행 알림은 SwiftUI가
         // 창을 만들기 전에 올 수 있어서, 그 시점에는 올릴 대상이 없다.
         .onAppear { WindowPresenter.present(alwaysOnTop: isAlwaysOnTop) }
-        .onChange(of: isAlwaysOnTop) { WindowPresenter.setAlwaysOnTop($0) }
+        .onChange(of: isAlwaysOnTop) { WindowPresenter.setAlwaysOnTop(isAlwaysOnTop) }
     }
 
     @ViewBuilder

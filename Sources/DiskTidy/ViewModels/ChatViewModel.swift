@@ -1,4 +1,5 @@
 import Foundation
+import MarkdownView
 
 /// 오른쪽 챗봇 패널의 대화 상태.
 ///
@@ -10,6 +11,25 @@ final class ChatViewModel: ObservableObject {
     @Published var input: String = ""
     @Published private(set) var isStreaming = false
     @Published var errorMessage: String?
+
+    /// 지금 흘러오는 답변의 마크다운 원본.
+    ///
+    /// 조각을 `messages`에 바로 이어 붙이지 않는다. `@Published` 배열을 토큰마다 고치면
+    /// 목록 전체가 매 토큰 다시 계산되고, 답변이 길수록 그 비용이 쌓인다.
+    /// `StreamingMarkdownSource`는 자기 스트림으로 값을 나르므로 SwiftUI 갱신을
+    /// 건드리지 않고, 화면은 라이브러리가 정한 간격(기본 50ms)으로만 다시 그린다.
+    /// 본문은 스트림이 끝날 때 `messages`로 한 번에 옮긴다.
+    @Published private(set) var streamingSource: StreamingMarkdownSource?
+
+    /// 스트리밍 중인 답변의 id. 그 말풍선만 `streamingSource`로 그린다.
+    @Published private(set) var streamingReplyID: UUID?
+
+    /// 요청은 보냈는데 첫 조각이 아직 안 왔다.
+    ///
+    /// 이 구간이 짧지 않다. CLI 제공자는 기동에 몇 초를 쓰고, 모델이 사고 블록을 먼저
+    /// 흘리는 동안에는 본문이 하나도 오지 않는다(실측 7초). 그동안 답변 자리가 비어
+    /// 있으면 멈춘 것처럼 보이므로 그 자리에 진행 표시를 둔다.
+    @Published private(set) var isAwaitingFirstChunk = false
 
     private let client: AIChatClient
     private let cliClient: AICLIClient
@@ -64,11 +84,14 @@ final class ChatViewModel: ObservableObject {
             return
         }
 
-        // 자리표시 답변을 미리 넣고 조각이 올 때마다 이어 붙인다.
-        // 인덱스가 아니라 id로 찾는다 — 스트리밍 중 "새 대화"를 누르면 인덱스가 어긋난다.
+        // 자리표시 답변을 미리 넣고, 조각은 `messages`가 아니라 스트리밍 원본에 쌓는다.
         let replyID = UUID()
+        let source = StreamingMarkdownSource()
         messages.append(AIChatMessage(id: replyID, role: .assistant, text: ""))
+        streamingSource = source
+        streamingReplyID = replyID
         isStreaming = true
+        isAwaitingFirstChunk = true
 
         streamTask = Task {
             var wasTruncated = false
@@ -77,43 +100,87 @@ final class ChatViewModel: ObservableObject {
                     // 취소 확인이 없으면 취소 뒤에도 버퍼에 남은 조각을 계속 이어 붙이고,
                     // 그 사이 시작된 새 스트림의 상태를 아래 마무리 코드가 덮어쓴다.
                     if Task.isCancelled { break }
-                    guard let index = self.messages.firstIndex(where: { $0.id == replyID })
-                    else { return }
                     switch chunk {
-                    case .text(let text): self.messages[index].text += text
-                    case .truncated: wasTruncated = true
+                    case .text(let text):
+                        // 첫 조각에서 한 번만 발행한다. 조각마다 쓰면 목록 전체가 다시 계산된다.
+                        if self.isAwaitingFirstChunk { self.isAwaitingFirstChunk = false }
+                        source.text += text
+                    case .truncated:
+                        wasTruncated = true
                     }
                 }
             } catch {
                 self.errorMessage = AIChatError.describe(error)
             }
 
-            // 취소된 Task는 마무리를 하지 않는다. 새 스트림이 이미 상태를 쥐고 있다.
+            // 취소된 Task는 마무리를 하지 않는다. `cancel()`이 이미 마무리했고,
+            // 새 스트림이 상태를 쥐고 있을 수도 있다.
             guard !Task.isCancelled else { return }
-            self.isStreaming = false
-
-            guard let index = self.messages.firstIndex(where: { $0.id == replyID }) else { return }
-            if self.messages[index].text.isEmpty {
-                // 한 글자도 못 받은 자리는 빈 말풍선으로 남기지 않는다. 다만 조용히 지우면
-                // 아무 일도 없었던 것처럼 보이므로 사유를 남긴다.
-                self.messages.remove(at: index)
-                if self.errorMessage == nil {
-                    self.errorMessage = "응답을 받지 못했습니다. 모델 이름과 API 루트 URL을 확인하세요."
-                }
-            } else if wasTruncated {
-                self.messages[index].text += "\n\n(답변이 길이 제한으로 잘렸습니다.)"
-            }
+            self.finishStreaming(truncated: wasTruncated, reportsEmptyAnswer: true)
         }
+    }
+
+    /// 스트림이 끝났다. 받은 본문을 `messages`로 옮기는 유일한 지점이다.
+    ///
+    /// - Parameter reportsEmptyAnswer: 한 글자도 못 받았을 때 사유를 배너로 띄울지.
+    ///   사용자가 직접 중단한 경우는 오류가 아니므로 끈다.
+    private func finishStreaming(truncated: Bool, reportsEmptyAnswer: Bool) {
+        guard let source = streamingSource, let replyID = streamingReplyID else { return }
+        source.finishStreaming()
+        streamingSource = nil
+        streamingReplyID = nil
+        isStreaming = false
+        isAwaitingFirstChunk = false
+
+        guard let index = messages.firstIndex(where: { $0.id == replyID }) else { return }
+        let answer = source.text
+        if answer.isEmpty {
+            // 한 글자도 못 받은 자리는 빈 말풍선으로 남기지 않는다. 다만 조용히 지우면
+            // 아무 일도 없었던 것처럼 보이므로 사유를 남긴다.
+            messages.remove(at: index)
+            if reportsEmptyAnswer, errorMessage == nil {
+                errorMessage = "응답을 받지 못했습니다. 모델 이름과 API 루트 URL을 확인하세요."
+            }
+        } else if truncated {
+            messages[index].text = answer + "\n\n(답변이 길이 제한으로 잘렸습니다.)"
+        } else {
+            messages[index].text = answer
+        }
+    }
+
+    /// 마지막 답변을 버리고 같은 질문을 다시 보낸다.
+    ///
+    /// 답변만 지우고 다시 물으면 모델이 앞 답변을 대화에 남아 있는 것으로 보고 이어서
+    /// 말한다. 그래서 마지막 질문 이후를 통째로 버린 뒤 같은 질문을 새로 보낸다.
+    func regenerateLastAnswer(settings: AISettings, apiKey: String?, context: ScreenContext) {
+        guard !isStreaming,
+              let index = messages.lastIndex(where: { $0.role == .user })
+        else { return }
+
+        input = messages[index].text
+        messages.removeSubrange(index...)
+        send(settings: settings, apiKey: apiKey, context: context)
+    }
+
+    /// 이 질문을 입력창으로 되돌리고 그 뒤 대화를 버린다. 고쳐서 다시 보내는 용도다.
+    func moveMessageToInput(id: UUID) {
+        guard !isStreaming, let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        input = messages[index].text
+        messages.removeSubrange(index...)
+    }
+
+    /// 마지막 답변인지. 재생성 버튼은 대화 끝에서만 뜻이 통한다.
+    func isLastAnswer(_ message: AIChatMessage) -> Bool {
+        message.role == .assistant && messages.last?.id == message.id
     }
 
     func cancel() {
         streamTask?.cancel()
         streamTask = nil
+        // 취소된 Task는 마무리를 건너뛰므로 여기서 마무리한다. 받은 만큼은 남기고,
+        // 한 글자도 없으면 빈 말풍선을 치운다.
+        finishStreaming(truncated: false, reportsEmptyAnswer: false)
         isStreaming = false
-        // 취소된 Task는 마무리를 건너뛰므로 빈 자리표시는 여기서 치운다.
-        if let last = messages.last, last.role == .assistant, last.text.isEmpty {
-            messages.removeLast()
-        }
     }
 
     func clear() {

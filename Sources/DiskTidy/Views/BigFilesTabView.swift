@@ -22,7 +22,7 @@ struct BigFilesTabView: View {
         }
         .padding()
         .onAppear { syncRoots() }
-        .onChange(of: rootViewModel.roots) { _ in syncRoots() }
+        .onChange(of: rootViewModel.roots) { syncRoots() }
         .screenContext("대용량 파일") { [listViewModel] in
             ScreenContextBuilder.cleanableList(
                 title: "대용량 파일 (200MB 이상)",
