@@ -71,7 +71,6 @@ struct ContentView: View {
 
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var update: UpdateViewModel
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     // 기본값을 켜 둔다. 툴바 아이콘만으로는 기능이 있는 줄 모른다.
     // `store:`를 명시해야 `swift run`과 설치된 앱이 같은 도메인을 쓴다 — `AppDefaults` 참고.
     @AppStorage("ChatPanelVisible", store: AppDefaults.shared) private var isChatVisible = true
@@ -79,7 +78,11 @@ struct ContentView: View {
     @AppStorage("ChatPanelWidth", store: AppDefaults.shared) private var chatWidth = ChatPanelView.defaultWidth
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        // 사이드바를 접지 못하게 고정한다. 접고 펴는 동안 macOS가 툴바를 다시
+        // 배치하면서 오버플로 표시(»)를 한 프레임 깜빡 그렸다 지운다 — 툴바 아이템을
+        // 전부 빼도 재현되므로 우리 쪽에서 막을 방법이 없다(실측). 탭이 11개뿐이라
+        // 접는 이득도 없다. 시스템 설정 앱처럼 항상 보이는 사이드바로 둔다.
+        NavigationSplitView(columnVisibility: .constant(.all)) {
             // 업데이트 버튼은 사이드바 맨 아래에 둔다. 툴바에 두면 제목과 한 유리 캡슐로
             // 묶여 제목이 버튼처럼 보이고 잘린다 — macOS 26 툴바는 `.navigation` 영역의
             // 아이템을 강제로 그룹화하고 `ToolbarSpacer(.fixed)`로도 끊기지 않는다(실측).
@@ -90,7 +93,9 @@ struct ContentView: View {
                 }
                 UpdateButton(viewModel: update)
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
+            // 폭까지 고정한다. 드래그로 좁히면 그것도 툴바 재배치를 부른다.
+            .navigationSplitViewColumnWidth(200)
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             HStack(spacing: 0) {
                 detailView(for: navState.selectedTab ?? 0)
