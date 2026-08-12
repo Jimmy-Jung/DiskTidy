@@ -4,15 +4,14 @@ import SwiftUI
 
 /// 오른쪽 챗봇 패널. 현재 탭이 등록한 화면 스냅샷을 근거로 대화한다.
 struct ChatPanelView: View {
-    /// 폭은 사용자가 끌어 바꾼다. 340pt로는 표 세 열과 80자 코드가 들어가지 않는다.
+    /// 인스펙터 컬럼 폭. 사용자가 경계를 끌어 바꾼다.
+    /// 340pt로는 표 세 열과 80자 코드가 들어가지 않는다.
     static let defaultWidth: Double = 440
     static let minimumWidth: Double = 320
     static let maximumWidth: Double = 720
 
     private static let scrollSpace = "ChatScroll"
     private static let bottomAnchorID = "ChatBottomAnchor"
-
-    let width: Double
 
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var contextStore: ChatContextStore
@@ -41,7 +40,8 @@ struct ChatPanelView: View {
             Divider()
             composer
         }
-        .frame(width: width)
+        // 폭은 인스펙터 컬럼이 정한다 — `ContentView`의 `inspectorColumnWidth` 참고.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
         // 키체인 읽기는 앱 시작이 아니라 패널이 보인 뒤에 한다.
         .task { await settings.loadKeyIfNeeded() }

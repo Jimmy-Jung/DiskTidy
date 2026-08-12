@@ -46,6 +46,10 @@ struct DiskTidyApp: App {
                 .environmentObject(explanations)
                 .environmentObject(update)
         }
+        // 보기 메뉴에 챗봇 인스펙터 토글과 ⌃⌘I를 넣는다. 툴바 버튼만 두면
+        // 키보드만 쓰는 사용자는 패널을 열 방법이 없다.
+        // 사이드바는 고정이라 `SidebarCommands()`는 넣지 않는다 — `ContentView` 참고.
+        .commands { InspectorCommands() }
 
         MenuBarExtra {
             MenuBarContentView()
