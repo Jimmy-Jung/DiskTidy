@@ -35,6 +35,9 @@ enum ScreenContextBuilder {
 
         if !viewModel.roots.isEmpty {
             lines.append("스캔 대상 폴더: " + viewModel.roots.map(\.path).joined(separator: ", "))
+        } else if viewModel.requiresRoots {
+            // 이걸 빼면 챗봇이 "캐시가 없습니다"라고 답한다. 사용자가 할 일은 폴더 추가다.
+            lines.append("스캔 대상 폴더가 없어 목록이 비어 있습니다 — 사용자가 ‘폴더 추가’를 눌러야 합니다.")
         }
         if viewModel.isScanning { lines.append("상태: 스캔 중") }
         if viewModel.isDeleting { lines.append("상태: 삭제 중") }

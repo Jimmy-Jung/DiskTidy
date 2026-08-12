@@ -21,13 +21,18 @@ struct CleanableListView: View {
                 ErrorBanner(message: message) { viewModel.errorMessage = nil }
             }
 
+            // 빈 목록에도 `List`를 그리면 안내 문구 아래로 빈 사각형이 화면을 다 먹어
+            // 탭 전체가 백지처럼 보인다. 비어 있을 때는 문구만 남긴다.
             if viewModel.items.isEmpty && !isWorking {
-                Text("항목 없음").foregroundStyle(.secondary)
-            }
-
-            List {
-                ForEach($viewModel.items) { $item in
-                    CleanableItemRow(item: $item, screenTitle: title)
+                Text(viewModel.emptyStateMessage)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            } else {
+                List {
+                    ForEach($viewModel.items) { $item in
+                        CleanableItemRow(item: $item, screenTitle: title)
+                    }
                 }
             }
 

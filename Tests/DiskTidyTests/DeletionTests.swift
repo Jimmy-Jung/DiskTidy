@@ -98,6 +98,44 @@ struct CleanableListScanTests {
         #expect(recorder.lastRoots == [root])
     }
 
+    @Test("루트가 필요한데 비어 있으면 폴더 추가를 안내한다")
+    func emptyStateAsksForRootWhenRequired() {
+        let viewModel = CleanableListViewModel(rootScan: { _ in [] })
+
+        #expect(viewModel.emptyStateMessage.contains("폴더 추가"))
+
+        viewModel.roots = [URL(fileURLWithPath: "/tmp")]
+        #expect(viewModel.emptyStateMessage == "항목 없음")
+    }
+
+    @Test("루트가 필요 없는 스캐너는 항목 없음으로 끝난다")
+    func emptyStateStaysPlainWithoutRoots() {
+        #expect(CleanableListViewModel(scan: { [] }).emptyStateMessage == "항목 없음")
+    }
+
+    @Test("읽을 수 없는 루트만 골라내고 배너 문구를 만든다")
+    func detectsUnreadableRoots() throws {
+        let temp = try TempDirectory()
+        let readable = try temp.makeDirectory("Readable")
+        let denied = try temp.makeDirectory("Denied")
+        let missing = temp.url.appendingPathComponent("Missing")
+        // 권한을 되돌려 놓지 않으면 임시 디렉터리 정리가 실패한다.
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700], ofItemAtPath: denied.path
+            )
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: denied.path)
+
+        let unreadable = CleanableListViewModel.unreadableRoots([readable, denied, missing])
+
+        // 없는 폴더는 권한 문제가 아니다 — `RootFolderStore.load`가 이미 걸러낸다.
+        #expect(unreadable == [denied])
+        let message = try #require(CleanableListViewModel.unreadableRootsMessage(unreadable))
+        #expect(message.contains("Denied"))
+        #expect(CleanableListViewModel.unreadableRootsMessage([]) == nil)
+    }
+
     @Test("선택 합계와 전체 선택·해제가 맞물린다")
     func selectionAggregates() {
         let viewModel = CleanableListViewModel(scan: { [] })
