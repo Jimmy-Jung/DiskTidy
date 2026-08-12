@@ -80,9 +80,14 @@ final class TempDirectory {
 
 /// `@MainActor` ViewModel이 내부 `Task`를 끝낼 때까지 기다린다.
 /// 조건이 참이 되면 true, 제한 시간을 넘기면 false.
+///
+/// 상한이 넉넉한 이유: CI 러너가 개발 머신보다 훨씬 느리다. 같은 실행에서
+/// `ShellRunner` 테스트가 로컬 3초 대 CI 24초였고, 10초로는 스캔·삭제를 기다리는
+/// 테스트 16개가 한꺼번에 시간에 걸려 넘어졌다(실측). 조건이 참이 되면 즉시
+/// 반환하므로 통과하는 실행의 소요 시간은 상한과 무관하다 — 늘려도 느려지지 않는다.
 @MainActor
 func waitUntil(
-    timeout: Duration = .seconds(10),
+    timeout: Duration = .seconds(60),
     _ condition: @MainActor () -> Bool
 ) async -> Bool {
     let deadline = ContinuousClock.now.advanced(by: timeout)
