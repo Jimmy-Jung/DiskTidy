@@ -28,7 +28,7 @@ The menu-bar item shows SSD usage at all times; clicking it opens a minimal drop
 
 ## Features
 
-Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant inspector on the right.
+Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant inspector on the right. Reopening a tab shows the previous scan results immediately while a fresh scan runs in the background.
 
 The sidebar is always open at a fixed width. While it collapses and expands, macOS re-lays out the toolbar and flashes the overflow indicator (») for a frame; this reproduces even with every toolbar item removed, so the app cannot prevent it (measured). With only eleven tabs there is nothing to gain by collapsing it.
 
@@ -44,7 +44,7 @@ The sidebar is always open at a fixed width. While it collapses and expands, mac
 | Android emulators | AVDs in `~/.android/avd`; deletion also clears the `.ini` pointer |
 | Temp files | Top-level entries in `/private/tmp` and `$TMPDIR` (safety rules and limits below) |
 | Dev daemons | Memory and swap metrics; terminate long-running dev daemons (Gradle, Kotlin) |
-| Settings | AI provider connection (provider, API root URL, model, API key), local CLI provider opt-in, window behavior (always on top) |
+| Settings | AI provider connection (provider, API root URL, model, API key), local CLI provider opt-in, window behavior (always on top), developer contact (GitHub issue · email) |
 
 The menu-bar item shows SSD usage, refreshed every 60 seconds. Clicking it opens a minimal dropdown with a gauge plus Open / Quit.
 
@@ -244,6 +244,7 @@ Each build generates a fresh ad-hoc signature, so macOS may re-ask for folder pe
 - **`ShellRunner` discards stderr via `FileHandle.nullDevice`.** With a `Pipe`, once the child fills the 64 KB pipe buffer it blocks on write while the parent waits forever reading stdout. `find`'s "Permission denied" output alone exceeds that, and the app really did hang. Covered by a regression test.
 - **`DiskScanner.sizes(of:)` batches paths into one `du -sk` call.** Spawning one process per entry means 100+ fork/exec calls for `~/Library/Caches` alone.
 - **Six cache tabs share a single `CleanableListViewModel`,** injecting only the scanner closure. Scanning and deletion both run off the main thread, and refresh is guarded against re-entry.
+- **Tab view models are owned by `TabViewModels` (window lifetime), not by the views.** A per-view `@StateObject` is destroyed the moment you leave the tab, so every re-entry rescanned from a blank screen. With the container, re-entering shows the previous results instantly and only the rescan runs in the background. The daemon tab's polling timer runs only while the tab is visible — moving the view model to window lifetime would otherwise have made it poll forever, so the timer is tied to visibility via `startPolling()`/`stopPolling()`.
 - **The temp-files tab is the one tab that does not use `CleanableListViewModel`.** `CleanableItem.id` is a fresh `UUID()`, so it does not preserve file identity as of the scan. Using it for an irreversible delete would remove whatever file happens to carry that name at deletion time. `TempCandidate` carries the raw `lstat` values instead, with its own view model and view.
 - **`lsof` runs exactly once per scan.** `lsof +D /private/tmp` walks the whole tree and is unusable. `lsof -w -n -F0n -u <uid>` returns every open path for the user's processes as NUL-terminated fields in one shot (measured: 1.2 s, ~89,000 fields). Parsing line by line breaks on filenames containing newlines.
 - **AI screen context is registered as a closure, not a value.** Each tab hands `ChatContextStore` a snapshot function in `onAppear`, and the assistant calls it the moment you send a message. Freezing a value would describe the empty list captured before a 26 GB tree scan finished.
