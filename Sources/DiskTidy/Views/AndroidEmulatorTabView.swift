@@ -1,17 +1,13 @@
 import SwiftUI
 
 struct AndroidEmulatorTabView: View {
-    // AVD 디렉터리를 지울 때 짝인 `<name>.ini` 포인터 파일도 함께 정리한다.
-    @StateObject private var viewModel = CleanableListViewModel(
-        scan: { AndroidEmulatorScanner.scan() },
-        companionPaths: { [AndroidEmulatorScanner.iniURL(forAVDNamed: $0.name)] }
-    )
+    // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
+    @ObservedObject var viewModel: CleanableListViewModel
 
     var body: some View {
         CleanableListView(title: "Android 에뮬레이터 (AVD)", viewModel: viewModel)
-            .onAppear {
-                if viewModel.items.isEmpty { viewModel.refresh() }
-            }
+            // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
+            .onAppear { viewModel.refresh() }
             .screenContext("Android 에뮬레이터") { [viewModel] in
                 ScreenContextBuilder.cleanableList(
                     title: "Android 에뮬레이터 (AVD)",

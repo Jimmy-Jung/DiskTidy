@@ -5,7 +5,8 @@ import SwiftUI
 /// `CleanableListView`를 범용화하면 identity 없는 `CleanableItem`까지
 /// 완전 삭제 계약에 섞이므로 재사용하지 않는다.
 struct TempTabView: View {
-    @StateObject private var viewModel = TempCleanupViewModel()
+    // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
+    @ObservedObject var viewModel: TempCleanupViewModel
     @State private var isConfirmingDelete = false
 
     private var selectedCount: Int { viewModel.selectedItems.count }
@@ -64,7 +65,8 @@ struct TempTabView: View {
             }
             Button("취소", role: .cancel) {}
         }
-        .onAppear { if viewModel.items.isEmpty { viewModel.refresh() } }
+        // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
+        .onAppear { viewModel.refresh() }
         .screenContext("임시파일") { [viewModel] in
             ScreenContextBuilder.temp(viewModel: viewModel)
         }

@@ -24,6 +24,9 @@ private let sidebarItems: [SidebarItem] = [
 struct ContentView: View {
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var update: UpdateViewModel
+    // 탭 ViewModel은 여기(창 수명)에 묶는다. 탭 뷰 안에 두면 탭 전환마다 파괴되어
+    // 재진입할 때 이전 스캔 결과가 사라진다 — `TabViewModels` 참고.
+    @StateObject private var tabs = TabViewModels()
     // 기본값을 켜 둔다. 툴바 아이콘만으로는 기능이 있는 줄 모른다.
     // `store:`를 명시해야 `swift run`과 설치된 앱이 같은 도메인을 쓴다 — `AppDefaults` 참고.
     @AppStorage("ChatPanelVisible", store: AppDefaults.shared) private var isChatVisible = true
@@ -89,15 +92,15 @@ struct ContentView: View {
     private func detailView(for tab: Int) -> some View {
         switch tab {
         case 0: StorageTabView()
-        case 1: CacheTabView()
-        case 2: SimulatorTabView()
-        case 3: ProjectCacheTabView()
-        case 4: XcodeCacheTabView()
-        case 5: BigFilesTabView()
-        case 6: AndroidCacheTabView()
-        case 7: AndroidEmulatorTabView()
-        case 8: TempTabView()
-        case 9: MemoryTabView()
+        case 1: CacheTabView(viewModel: tabs.cache)
+        case 2: SimulatorTabView(viewModel: tabs.simulator)
+        case 3: ProjectCacheTabView(rootViewModel: tabs.projectCacheRoots, listViewModel: tabs.projectCache)
+        case 4: XcodeCacheTabView(viewModel: tabs.xcodeCache)
+        case 5: BigFilesTabView(rootViewModel: tabs.bigFileRoots, listViewModel: tabs.bigFiles)
+        case 6: AndroidCacheTabView(viewModel: tabs.androidCache)
+        case 7: AndroidEmulatorTabView(viewModel: tabs.androidEmulator)
+        case 8: TempTabView(viewModel: tabs.temp)
+        case 9: MemoryTabView(viewModel: tabs.memory)
         case AppNavigationState.settingsTab: SettingsTabView()
         default: StorageTabView()
         }

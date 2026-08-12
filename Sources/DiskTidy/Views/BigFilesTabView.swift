@@ -1,13 +1,9 @@
 import SwiftUI
 
 struct BigFilesTabView: View {
-    @StateObject private var rootViewModel = RootFolderViewModel(
-        storeKey: "BigFileRoots",
-        defaultRoots: [FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")]
-    )
-    @StateObject private var listViewModel = CleanableListViewModel(
-        rootScan: { BigFileScanner.scan(roots: $0) }
-    )
+    // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
+    @ObservedObject var rootViewModel: RootFolderViewModel
+    @ObservedObject var listViewModel: CleanableListViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -5,7 +5,8 @@ import SwiftUI
 /// `purge`는 실행하지 않는다 (권한 다이얼로그를 띄우고 회수량이 사실상 0). 스왑 섹션은
 /// **읽기 전용 관측값**이라 삭제 버튼이 없다. RAM을 실제로 되찾는 건 프로세스 종료뿐이다.
 struct MemoryTabView: View {
-    @StateObject private var viewModel = MemoryViewModel()
+    // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
+    @ObservedObject var viewModel: MemoryViewModel
     @State private var isConfirmingTermination = false
 
     private var terminableCount: Int { viewModel.terminableSelection.count }
@@ -75,7 +76,13 @@ struct MemoryTabView: View {
         } message: {
             Text(confirmationDetail)
         }
-        .onAppear { if viewModel.processes.isEmpty { viewModel.refreshAll() } }
+        // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
+        // 폴링 타이머는 탭이 보이는 동안만 돈다 — `startPolling()` 주석 참고.
+        .onAppear {
+            viewModel.refreshAll()
+            viewModel.startPolling()
+        }
+        .onDisappear { viewModel.stopPolling() }
         .screenContext("개발 데몬 정리") { [viewModel] in
             ScreenContextBuilder.memory(viewModel: viewModel)
         }

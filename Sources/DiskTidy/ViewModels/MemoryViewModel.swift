@@ -29,6 +29,8 @@ final class MemoryViewModel: ObservableObject {
 
     /// timer는 하나만 소유한다. 지표 주기마다 깨어나고 그중 N번째에만 목록을 다시 읽는다.
     private var timer: Timer?
+    /// `startPolling()`이 쓰는 주기. 테스트는 nil로 타이머 없이 상태 전이만 검증한다.
+    private let metricsInterval: TimeInterval?
     private let processRefreshTickCount: Int
     private var ticksSinceProcessRefresh = 0
 
@@ -61,15 +63,24 @@ final class MemoryViewModel: ObservableObject {
         self.scanProcesses = scanProcesses
         self.terminate = terminate
 
+        self.metricsInterval = metricsInterval
         let interval = metricsInterval ?? processInterval
         processRefreshTickCount = max(1, Int((processInterval / max(interval, 0.001)).rounded()))
+    }
 
-        // 테스트는 `metricsInterval: nil`로 타이머 없이 상태 전이만 검증한다.
-        guard let metricsInterval else { return }
+    /// 탭이 보일 때만 폴링한다. 이 객체는 창 수명 동안 살아 있으므로(`TabViewModels`),
+    /// init에서 타이머를 걸면 탭을 한 번도 열지 않아도 5초마다 sysctl, 20초마다 ps가 돈다.
+    func startPolling() {
+        guard timer == nil, let metricsInterval else { return }
         timer = Timer.scheduledTimer(withTimeInterval: metricsInterval, repeats: true) {
             [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+    }
+
+    func stopPolling() {
+        timer?.invalidate()
+        timer = nil
     }
 
     deinit {

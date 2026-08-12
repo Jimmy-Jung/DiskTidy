@@ -1,10 +1,9 @@
 import SwiftUI
 
 struct ProjectCacheTabView: View {
-    @StateObject private var rootViewModel = RootFolderViewModel(storeKey: "ProjectCacheRoots")
-    @StateObject private var listViewModel = CleanableListViewModel(
-        rootScan: { ProjectCacheScanner.scan(roots: $0) }
-    )
+    // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
+    @ObservedObject var rootViewModel: RootFolderViewModel
+    @ObservedObject var listViewModel: CleanableListViewModel
 
     private static let emptyHint = """
     폴더를 추가하면 하위 빌드 캐시를 탐색합니다. \
