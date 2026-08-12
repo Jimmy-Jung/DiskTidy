@@ -42,10 +42,7 @@ enum XcodeCacheScanner {
     }
 
     private static func directoryEntries(of url: URL) -> [URL] {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: url, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
-        return entries.filter {
+        DirectoryContents.ofRoot(url, includingPropertiesForKeys: [.isDirectoryKey]).filter {
             (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
         }
     }

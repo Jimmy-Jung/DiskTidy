@@ -35,7 +35,11 @@ enum ProjectCacheScanner {
     static func scan(roots: [URL], maxDepth: Int = 6) -> [CleanableItem] {
         var matches: [URL] = []
         for root in roots {
-            collect(in: root, currentDepth: 0, maxDepth: maxDepth, into: &matches)
+            // 루트만 링크를 푼다. 고른 폴더 자체가 심볼릭 링크면
+            // `contentsOfDirectory(at:)`가 `ENOTDIR`로 실패해 목록이 통째로 빈다
+            // — `DirectoryContents` 참고. 하위 항목은 링크를 그대로 둬야
+            // 순환에 빠지지 않는다(`collect` 주석 참고).
+            collect(in: root.resolvingSymlinksInPath(), currentDepth: 0, maxDepth: maxDepth, into: &matches)
         }
 
         let sizes = DiskScanner.sizes(of: matches)

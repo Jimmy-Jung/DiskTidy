@@ -10,12 +10,9 @@ enum AndroidCacheScanner {
         ]
 
         let studioRoot = home.appendingPathComponent("Library/Application Support/Google")
-        if let entries = try? FileManager.default.contentsOfDirectory(
-            at: studioRoot, includingPropertiesForKeys: nil
-        ) {
-            for entry in entries where entry.lastPathComponent.hasPrefix("AndroidStudio") {
-                labeled.append(("\(entry.lastPathComponent)/caches", entry.appendingPathComponent("caches")))
-            }
+        for entry in DirectoryContents.ofRoot(studioRoot)
+        where entry.lastPathComponent.hasPrefix("AndroidStudio") {
+            labeled.append(("\(entry.lastPathComponent)/caches", entry.appendingPathComponent("caches")))
         }
 
         let existing = labeled.filter { FileManager.default.fileExists(atPath: $0.url.path) }

@@ -12,10 +12,7 @@ enum AndroidEmulatorScanner {
     }
 
     static func scan(avdRoot: URL = defaultAVDRoot) -> [CleanableItem] {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: avdRoot, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
-
+        let entries = DirectoryContents.ofRoot(avdRoot, includingPropertiesForKeys: [.isDirectoryKey])
         let avdDirs = entries.filter { entry in
             entry.pathExtension == "avd"
                 && (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true

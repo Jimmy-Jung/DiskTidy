@@ -391,3 +391,68 @@ struct FileAttributesTests {
         #expect(FileAttributes.modificationDate(of: temp.url.appendingPathComponent("nope")) == nil)
     }
 }
+
+// MARK: - 심볼릭 링크로 걸린 스캔 루트
+
+/// `FileManager.contentsOfDirectory(at:)`(URL 버전)는 심볼릭 링크 디렉터리에서
+/// `ENOTDIR`로 실패한다. `~/Library/Developer/Xcode/DerivedData`를 외장 디스크로
+/// 빼 두면 Xcode 캐시 화면이 통째로 비어 보였다 — 그 회귀를 막는다.
+@Suite("심볼릭 링크로 걸린 스캔 루트")
+struct SymlinkedScanRootTests {
+    private let temp: TempDirectory
+
+    init() throws { temp = try TempDirectory() }
+
+    @Test("캐시 루트가 링크여도 하위 항목을 읽는다")
+    func cacheRootThroughSymlink() throws {
+        try temp.makeFile("real/big/payload.bin", bytes: 64 * 1024)
+        try temp.makeSymbolicLink("link", to: temp.url.appendingPathComponent("real"))
+
+        let items = CacheScanner.scan(cachesURL: temp.url.appendingPathComponent("link"))
+
+        #expect(items.map(\.name) == ["big"])
+        #expect(items[0].sizeBytes > 0)
+    }
+
+    @Test("DerivedData가 링크여도 하위 항목을 읽는다")
+    func derivedDataThroughSymlink() throws {
+        let dev = try temp.makeDirectory("Xcode")
+        try temp.makeFile("elsewhere/RealApp-xyz/payload.bin", bytes: 32 * 1024)
+        try FileManager.default.createSymbolicLink(
+            at: dev.appendingPathComponent("DerivedData"),
+            withDestinationURL: temp.url.appendingPathComponent("elsewhere")
+        )
+
+        #expect(XcodeCacheScanner.scan(devURL: dev).map(\.name) == ["DerivedData/RealApp-xyz"])
+    }
+
+    @Test("프로젝트 캐시 루트가 링크여도 빌드 캐시를 찾는다")
+    func projectRootThroughSymlink() throws {
+        try temp.makeFile("real/MyApp/Package.swift", bytes: 16)
+        try temp.makeFile("real/MyApp/.build/payload.bin", bytes: 16 * 1024)
+        try temp.makeSymbolicLink("link", to: temp.url.appendingPathComponent("real"))
+
+        let items = ProjectCacheScanner.scan(roots: [temp.url.appendingPathComponent("link")])
+
+        // 표시 이름은 루트의 부모 기준이라 루트 이름까지 들어간다. 링크를 푼 뒤라
+        // 링크 이름(`link`)이 아니라 실제 폴더 이름(`real`)이 보인다.
+        #expect(items.map(\.name) == ["real/MyApp/.build"])
+    }
+
+    @Test("삭제 대상은 링크가 아니라 실경로다")
+    func resolvedPathPointsAtRealTarget() throws {
+        let real = try temp.makeDirectory("real")
+        try temp.makeFile("real/big/payload.bin", bytes: 8 * 1024)
+        try temp.makeSymbolicLink("link", to: real)
+
+        let item = try #require(
+            CacheScanner.scan(cachesURL: temp.url.appendingPathComponent("link")).first
+        )
+
+        // 링크만 지우면 공간이 회수되지 않는다. 실경로를 들고 있어야 한다.
+        // `/private` 접두사는 비교하지 않는다 — `resolvingSymlinksInPath()`는 떼고
+        // `contentsOfDirectory`는 붙여 줘서 경로 문자열이 그대로는 안 맞는다.
+        #expect(!item.path.path.contains("/link/"))
+        #expect(item.path.path.hasSuffix("/real/big"))
+    }
+}
