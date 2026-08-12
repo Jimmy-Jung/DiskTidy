@@ -30,6 +30,7 @@ struct DiskTidyApp: App {
     // 항목 설명 캐시도 앱 수준에 둔다. 탭을 옮기거나 새로고침할 때마다 다시 물으면
     // 같은 폴더에 대해 요청이 계속 나간다.
     @StateObject private var explanations = ItemExplanationStore()
+    @StateObject private var update = UpdateViewModel()
 
     var body: some Scene {
         // `WindowGroup`은 메뉴바의 "앱 열기"를 누를 때마다 새 창을 만든다. 탭 ViewModel은
@@ -43,6 +44,7 @@ struct DiskTidyApp: App {
                 .environmentObject(aiSettings)
                 .environmentObject(chat)
                 .environmentObject(explanations)
+                .environmentObject(update)
         }
 
         MenuBarExtra {

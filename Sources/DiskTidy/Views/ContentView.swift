@@ -70,6 +70,7 @@ struct ContentView: View {
     private static let panelAnimation: Animation = .easeOut(duration: 0.22)
 
     @EnvironmentObject private var navState: AppNavigationState
+    @EnvironmentObject private var update: UpdateViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     // 기본값을 켜 둔다. 툴바 아이콘만으로는 기능이 있는 줄 모른다.
     // `store:`를 명시해야 `swift run`과 설치된 앱이 같은 도메인을 쓴다 — `AppDefaults` 참고.
@@ -79,8 +80,15 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(sidebarItems, selection: $navState.selectedTab) { item in
-                Label(item.title, systemImage: item.systemImage)
+            // 업데이트 버튼은 사이드바 맨 아래에 둔다. 툴바에 두면 제목과 한 유리 캡슐로
+            // 묶여 제목이 버튼처럼 보이고 잘린다 — macOS 26 툴바는 `.navigation` 영역의
+            // 아이템을 강제로 그룹화하고 `ToolbarSpacer(.fixed)`로도 끊기지 않는다(실측).
+            // 새 버전이 없으면 `UpdateButton`이 아무것도 그리지 않아 목록만 남는다.
+            VStack(spacing: 0) {
+                List(sidebarItems, selection: $navState.selectedTab) { item in
+                    Label(item.title, systemImage: item.systemImage)
+                }
+                UpdateButton(viewModel: update)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
@@ -117,6 +125,9 @@ struct ContentView: View {
         // 창이 실제로 생긴 뒤 한 번 더 올린다. 앱 델리게이트의 실행 알림은 SwiftUI가
         // 창을 만들기 전에 올 수 있어서, 그 시점에는 올릴 대상이 없다.
         .onAppear { WindowPresenter.present(alwaysOnTop: isAlwaysOnTop) }
+        // 실행할 때 한 번만 묻는다. 토큰 없는 GitHub API는 시간당 60회 제한이 있고,
+        // 매번 창을 열 때마다 부를 이유도 없다.
+        .task { await update.checkForUpdate() }
         .onChange(of: isAlwaysOnTop) { WindowPresenter.setAlwaysOnTop(isAlwaysOnTop) }
     }
 
