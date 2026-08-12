@@ -15,16 +15,22 @@ A macOS disk-cleanup utility. Review and clear app caches, simulators, build cac
 | **App caches** — `~/Library/Caches` by size<br><img src="docs/screenshots/02-cache.png" width="400" alt="App caches screen"> | **Simulators** — least recently used on top<br><img src="docs/screenshots/03-simulator.png" width="400" alt="Simulators screen"> |
 | **Project caches** — recursive build-cache scan<br><img src="docs/screenshots/04-project-cache.png" width="400" alt="Project caches screen"> | **Large files** — files over 200 MB<br><img src="docs/screenshots/06-big-files.png" width="400" alt="Large files screen"> |
 | **Android caches** — Gradle · Android Studio<br><img src="docs/screenshots/07-android-cache.png" width="400" alt="Android caches screen"> | **Android emulators** — AVD list<br><img src="docs/screenshots/08-android-emulator.png" width="400" alt="Android emulators screen"> |
+| **Temp files** — only entries that pass the safety rules<br><img src="docs/screenshots/12-temp.png" width="400" alt="Temp files screen"> | **Dev daemons** — memory and swap plus long-running daemons<br><img src="docs/screenshots/13-memory.png" width="400" alt="Dev daemons screen"> |
+| **Settings** — AI provider setup and window behaviour<br><img src="docs/screenshots/14-settings.png" width="400" alt="Settings screen"> | **AI assistant** — opens as a trailing inspector<br><img src="docs/screenshots/15-chat.png" width="400" alt="AI assistant inspector"> |
 
 The menu-bar item shows SSD usage at all times; clicking it opens a minimal dropdown.
 
 <img src="docs/screenshots/09-menubar.png" width="240" alt="Menu bar dropdown">
 
 > These are real screenshots from daily use. Only the personal parts — cache entry names and project paths — are blurred.
+> The temp-files and large-files screens are exceptions: nothing met the criteria when they were taken, so qualifying dummy entries were created for the shots (owned by me · untouched for 3 days · not open, and over 200 MB respectively).
+> The settings screen has the **local CLI provider** opt-in switched on — that is a development-build-only path, and the provider does not appear in the dropdown in release builds.
 
 ## Features
 
-Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant panel on the right.
+Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant inspector on the right.
+
+The sidebar is always open at a fixed width. While it collapses and expands, macOS re-lays out the toolbar and flashes the overflow indicator (») for a frame; this reproduces even with every toolbar item removed, so the app cannot prevent it (measured). With only eleven tabs there is nothing to gain by collapsing it.
 
 | Screen | Contents |
 |---|---|
@@ -32,7 +38,7 @@ Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant
 | App caches | Per-app directories under `~/Library/Caches` |
 | Simulators | iOS simulators sorted by last use; delete device or erase data |
 | Project caches | Recursive scan for build caches under folders you pick (rules below) |
-| Xcode caches | `DerivedData`, iOS/watchOS/tvOS DeviceSupport, Archives |
+| Xcode caches | `DerivedData`, iOS/watchOS/tvOS DeviceSupport, Archives. Reads them even when symlinked to an external drive |
 | Large files | Files over 200 MB under folders you pick (defaults to `~/Downloads`) |
 | Android caches | Gradle caches and distributions, `~/.android` caches, Android Studio IDE caches |
 | Android emulators | AVDs in `~/.android/avd`; deletion also clears the `.ini` pointer |
@@ -50,7 +56,7 @@ Activation alone measurably is not enough: when another app is full-screen it ow
 
 ## AI assistant
 
-The speech-bubble toolbar button opens a panel on the right. It answers **from the screen you are currently looking at** — item count and total, selection state, the top 40 rows, scan state, error banner, and how that screen deletes things are rebuilt on every question and sent as the system prompt. Tabs register a snapshot function rather than a value, so asking after a scan finishes describes the current list, not an empty one.
+The speech-bubble toolbar button — or **View → Show Inspector (⌃⌘I)** — opens the trailing inspector. It is the standard macOS inspector, so the show/hide animation, the drag-to-resize edge and width persistence all come from the system. It answers **from the screen you are currently looking at** — item count and total, selection state, the top 40 rows, scan state, error banner, and how that screen deletes things are rebuilt on every question and sent as the system prompt. Tabs register a snapshot function rather than a value, so asking after a scan finishes describes the current list, not an empty one.
 
 | Provider | Default root | Wire format |
 |---|---|---|

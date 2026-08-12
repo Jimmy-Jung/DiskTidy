@@ -13,16 +13,22 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | **캐시데이터** — `~/Library/Caches` 앱별 캐시를 크기순으로<br><img src="docs/screenshots/02-cache.png" width="400" alt="캐시데이터 화면"> | **시뮬레이터** — 오래 방치된 기기가 위로<br><img src="docs/screenshots/03-simulator.png" width="400" alt="시뮬레이터 화면"> |
 | **프로젝트 캐시** — 고른 폴더 하위 빌드 캐시 재귀 탐색<br><img src="docs/screenshots/04-project-cache.png" width="400" alt="프로젝트 캐시 화면"> | **대용량 파일** — 200MB 이상 파일 탐색<br><img src="docs/screenshots/06-big-files.png" width="400" alt="대용량 파일 화면"> |
 | **Android 캐시** — Gradle · Android Studio<br><img src="docs/screenshots/07-android-cache.png" width="400" alt="Android 캐시 화면"> | **Android 에뮬레이터** — AVD 목록<br><img src="docs/screenshots/08-android-emulator.png" width="400" alt="Android 에뮬레이터 화면"> |
+| **임시파일** — 안전 규칙을 통과한 항목만 올라온다<br><img src="docs/screenshots/12-temp.png" width="400" alt="임시파일 화면"> | **개발 데몬** — 메모리·스왑 지표와 장기 실행 데몬<br><img src="docs/screenshots/13-memory.png" width="400" alt="개발 데몬 화면"> |
+| **설정** — AI 제공자 연결과 창 동작<br><img src="docs/screenshots/14-settings.png" width="400" alt="설정 화면"> | **AI 도우미** — 오른쪽 인스펙터로 열린다<br><img src="docs/screenshots/15-chat.png" width="400" alt="AI 도우미 인스펙터"> |
 
 메뉴바 아이콘은 SSD 사용률을 상시 표시하고, 클릭하면 최소 드롭다운이 열린다.
 
 <img src="docs/screenshots/09-menubar.png" width="240" alt="메뉴바 드롭다운">
 
 > 스크린샷은 실제 사용 화면이다. 캐시 항목명·프로젝트 경로 등 개인 정보에 해당하는 부분만 모자이크 처리했다.
+> 임시파일·대용량 파일 화면은 예외다 — 촬영 시점에 조건을 만족하는 항목이 없어 조건을 통과하는 더미를 만들어 찍었다(임시파일은 내 소유 · 3일 미접근 · 미개방, 대용량 파일은 200MB 이상).
+> 설정 화면은 개발 빌드 전용 옵트인인 **로컬 CLI 제공자**를 켠 상태다 — 배포 빌드에서는 그 제공자가 드롭다운에 나오지 않는다.
 
 ## 기능
 
-좌측 사이드바로 이동하는 11개 화면 + 메뉴바 상시 표시 + 우측 AI 도우미 패널.
+좌측 사이드바로 이동하는 11개 화면 + 메뉴바 상시 표시 + 오른쪽 AI 도우미 인스펙터.
+
+사이드바는 항상 열려 있고 폭이 고정이다. 접었다 펴는 동안 macOS가 툴바를 다시 배치하면서 오버플로 표시(»)를 한 프레임 깜빡 그렸다 지우는데, 툴바 아이템을 전부 빼도 재현돼 앱에서 막을 방법이 없다(실측). 탭이 11개뿐이라 접어서 얻을 것도 없다.
 
 | 화면 | 내용 |
 |---|---|
@@ -30,7 +36,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | 캐시데이터 | `~/Library/Caches/*` 앱별 캐시 |
 | 시뮬레이터 | iOS 시뮬레이터 목록(마지막 사용일 기준 정렬), 기기 삭제 · 데이터 초기화 |
 | 프로젝트 캐시 | 사용자가 고른 폴더 하위의 빌드 캐시 재귀 탐색 (판정 규칙은 아래) |
-| Xcode 캐시 | `DerivedData` · iOS/watchOS/tvOS DeviceSupport · Archives 전역 스캔 |
+| Xcode 캐시 | `DerivedData` · iOS/watchOS/tvOS DeviceSupport · Archives 전역 스캔. 외장 디스크로 심볼릭 링크한 경우도 읽는다 |
 | 대용량 파일 | 사용자가 고른 폴더에서 200MB 이상 파일 탐색 (기본값 `~/Downloads`) |
 | Android 캐시 | Gradle 캐시/배포판, `~/.android` 캐시, Android Studio IDE 캐시 |
 | Android 에뮬레이터 | `~/.android/avd`의 AVD 목록, 삭제 시 `.ini` 포인터까지 정리 |
@@ -48,7 +54,7 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 
 ## AI 도우미
 
-툴바의 말풍선 버튼으로 오른쪽 패널을 연다. **지금 보고 있는 탭의 화면 정보를 근거로** 대화한다 — 항목 수와 합계, 선택 상태, 목록 상위 40개, 스캔 상태, 오류 배너, 그 화면의 삭제 방식이 매 질문마다 새로 만들어져 프롬프트에 실린다. 스캔이 끝난 뒤 물어도 최신 목록으로 답하도록 값이 아니라 스냅샷 함수를 등록하는 구조다.
+툴바의 말풍선 버튼이나 **보기 → 인스펙터 보기(⌃⌘I)** 로 오른쪽 인스펙터를 연다. macOS 표준 인스펙터라 여닫는 애니메이션과 경계 드래그, 폭 저장을 시스템이 처리한다. **지금 보고 있는 탭의 화면 정보를 근거로** 대화한다 — 항목 수와 합계, 선택 상태, 목록 상위 40개, 스캔 상태, 오류 배너, 그 화면의 삭제 방식이 매 질문마다 새로 만들어져 프롬프트에 실린다. 스캔이 끝난 뒤 물어도 최신 목록으로 답하도록 값이 아니라 스냅샷 함수를 등록하는 구조다.
 
 | 제공자 | 기본 루트 | 형식 |
 |---|---|---|
@@ -274,7 +280,8 @@ DiskTidy/
                            #   AppNavigationState + AI(AIProvider, AIChatMessage,
                            #   ScreenContext, ChatContextStore, KnownItemCatalog)
     Services/              # 스캐너 + 공용 헬퍼(ShellRunner, DiskScanner, TrashService,
-                           #   RootFolderStore, FileAttributes, StorageInfo, StorageMonitor)
+                           #   RootFolderStore, FileAttributes, StorageInfo, StorageMonitor,
+                           #   DirectoryContents)
                            #   + 임시파일 전용(TempRootPolicy, TempScanner, PermanentDeleter)
                            #   + AI(APIKeyStore, SettingsStore, AIRequestBuilder,
                            #   AIStreamParser, AIChatClient, AIModelCatalog, AIChatError,
@@ -283,7 +290,7 @@ DiskTidy/
                            #   RootFolderViewModel, TempCleanupViewModel, MemoryViewModel,
                            #   AISettingsViewModel, ChatViewModel, ScreenContextBuilder,
                            #   ItemExplanationStore
-    Views/                 # ContentView(사이드바 + AI 패널 토글) + 화면별 탭 뷰 +
+    Views/                 # ContentView(고정 사이드바 + AI 인스펙터 토글) + 화면별 탭 뷰 +
                            #   공용 컴포넌트(CleanableListView, RootFolderPicker, ErrorBanner,
                            #   WindowPresenter)
                            #   + AI(SettingsTabView, ChatPanelView, ChatMarkdownStyle,
