@@ -130,7 +130,7 @@ final class AISettingsViewModel: ObservableObject {
         AISettings(provider: provider, baseURL: baseURL, model: model)
     }
 
-    /// 요청에 쓸 키. 로컬 제공자는 키가 없다.
+    /// 요청에 쓸 키. CLI 제공자는 키가 없다 — 자격증명을 CLI가 들고 있다.
     var apiKeyForRequest: String? {
         provider.requiresAPIKey ? apiKey : nil
     }
@@ -145,11 +145,7 @@ final class AISettingsViewModel: ObservableObject {
 
         switch provider.transport {
         case .http(let format):
-            let endpoint = try? AIRequestBuilder.endpointURL(
-                base: baseURL,
-                format: format,
-                allowsLANPlaintext: !provider.requiresAPIKey
-            )
+            let endpoint = try? AIRequestBuilder.endpointURL(base: baseURL, format: format)
             guard endpoint != nil else { return false }
             if provider.requiresAPIKey {
                 return !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

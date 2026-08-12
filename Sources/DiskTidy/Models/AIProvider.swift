@@ -100,7 +100,6 @@ enum AITransport: Sendable {
 enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     case anthropic
     case openAI
-    case ollama
     case openAICompatible
     /// 구독 계정으로 이미 로그인된 CLI를 그대로 쓴다. 기본으로 숨어 있고 사용자가 켠다.
     case claudeCodeCLI
@@ -121,7 +120,6 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "Anthropic (Claude)"
         case .openAI: return "OpenAI"
-        case .ollama: return "Ollama (로컬)"
         case .openAICompatible: return "OpenAI 호환 (직접 입력)"
         case .claudeCodeCLI: return "Claude Code CLI · 구독 로그인"
         case .codexCLI: return "Codex CLI · 구독 로그인"
@@ -131,7 +129,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     var transport: AITransport {
         switch self {
         case .anthropic: return .http(.anthropicMessages)
-        case .openAI, .ollama, .openAICompatible: return .http(.openAIChatCompletions)
+        case .openAI, .openAICompatible: return .http(.openAIChatCompletions)
         case .claudeCodeCLI: return .localCLI(.claudeCode)
         case .codexCLI: return .localCLI(.codex)
         }
@@ -154,7 +152,6 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "https://api.anthropic.com"
         case .openAI: return "https://api.openai.com"
-        case .ollama: return "http://localhost:11434"
         case .openAICompatible: return ""
         case .claudeCodeCLI, .codexCLI: return cliTool?.defaultExecutablePath ?? ""
         }
@@ -165,7 +162,6 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .anthropic: return "claude-sonnet-5"
         case .openAI: return "gpt-4o"
-        case .ollama: return "llama3.1"
         case .openAICompatible: return ""
         case .claudeCodeCLI: return "sonnet"
         // 비워 둔다. Codex는 자기 설정의 모델을 쓴다.
@@ -173,12 +169,12 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// 로컬 제공자는 키가 없다. 설정 화면에서 키 입력을 숨기고 검증에서도 뺀다.
-    /// CLI 제공자는 CLI가 이미 로그인돼 있으므로 앱이 자격증명을 만지지 않는다.
+    /// CLI 제공자는 키가 없다 — CLI가 이미 로그인돼 있어 앱이 자격증명을 만지지 않는다.
+    /// 설정 화면에서 키 입력을 숨기고 검증에서도 뺀다.
     var requiresAPIKey: Bool {
         switch self {
         case .anthropic, .openAI, .openAICompatible: return true
-        case .ollama, .claudeCodeCLI, .codexCLI: return false
+        case .claudeCodeCLI, .codexCLI: return false
         }
     }
 
@@ -195,7 +191,7 @@ enum AIProvider: String, CaseIterable, Identifiable, Sendable {
     var fastModel: String? {
         switch self {
         case .claudeCodeCLI: return "haiku"
-        case .anthropic, .openAI, .ollama, .openAICompatible, .codexCLI: return nil
+        case .anthropic, .openAI, .openAICompatible, .codexCLI: return nil
         }
     }
 

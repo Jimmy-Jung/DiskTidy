@@ -22,11 +22,7 @@ enum AIRequestBuilder {
         guard !model.isEmpty else { throw AIChatError.missingModel }
         guard let format = settings.provider.wireFormat else { throw AIChatError.notHTTPProvider }
 
-        let url = try endpointURL(
-            base: settings.baseURL,
-            format: format,
-            allowsLANPlaintext: !settings.provider.requiresAPIKey
-        )
+        let url = try endpointURL(base: settings.baseURL, format: format)
 
         var request = try authorizedRequest(url: url, settings: settings, apiKey: apiKey)
         request.httpMethod = "POST"
@@ -49,8 +45,7 @@ enum AIRequestBuilder {
         let url = try endpointURL(
             base: settings.baseURL,
             format: format,
-            endpointPath: AIWireFormat.modelsPath,
-            allowsLANPlaintext: !settings.provider.requiresAPIKey
+            endpointPath: AIWireFormat.modelsPath
         )
         var request = try authorizedRequest(url: url, settings: settings, apiKey: apiKey)
         request.httpMethod = "GET"
@@ -68,9 +63,8 @@ enum AIRequestBuilder {
         if settings.provider.requiresAPIKey && usableKey == nil { throw AIChatError.missingAPIKey }
 
         var request = URLRequest(url: url)
-        // 무응답 서버에 무한정 매달리지 않는다. 로컬 서버는 모델을 메모리에 올리는
-        // 콜드 스타트가 분 단위라 60초로는 첫 바이트를 못 본다.
-        request.timeoutInterval = settings.provider.requiresAPIKey ? 60 : 300
+        // 무응답 서버에 무한정 매달리지 않는다.
+        request.timeoutInterval = 60
 
         switch settings.provider.wireFormat {
         case .none:
@@ -88,14 +82,10 @@ enum AIRequestBuilder {
 
     /// 사용자가 끝 슬래시나 전체 엔드포인트 경로를 붙여도 경로가 겹치지 않게 정리한 뒤
     /// 형식별 경로를 붙인다.
-    ///
-    /// `allowsLANPlaintext`는 키가 필요 없는 제공자에만 켠다. 켜면 `*.local` 호스트에
-    /// 평문 HTTP를 허용하는데, 키를 요구하는 제공자에 허용하면 키가 LAN을 평문으로 지난다.
     static func endpointURL(
         base: String,
         format: AIWireFormat,
-        endpointPath: String? = nil,
-        allowsLANPlaintext: Bool = false
+        endpointPath: String? = nil
     ) throws -> URL {
         let trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         guard var components = URLComponents(string: trimmed),
@@ -105,8 +95,8 @@ enum AIRequestBuilder {
               !host.isEmpty
         else { throw AIChatError.invalidBaseURL(base) }
 
-        // 평문 HTTP로 원격에 보내면 API 키가 그대로 노출된다. 로컬만 허용한다.
-        if scheme == "http" && !isLocal(host: host, allowsLAN: allowsLANPlaintext) {
+        // 평문 HTTP로 원격에 보내면 API 키가 그대로 노출된다. 루프백만 허용한다.
+        if scheme == "http" && !isLoopback(host: host) {
             throw AIChatError.insecureEndpoint(host)
         }
 
@@ -124,11 +114,10 @@ enum AIRequestBuilder {
         return url
     }
 
-    private static func isLocal(host: String, allowsLAN: Bool) -> Bool {
+    private static func isLoopback(host: String) -> Bool {
         let normalized = host.lowercased()
             .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-        if loopbackHosts.contains(normalized) { return true }
-        return allowsLAN && normalized.hasSuffix(".local")
+        return loopbackHosts.contains(normalized)
     }
 
     private static func body(
@@ -164,7 +153,7 @@ enum AIRequestBuilder {
 
     /// OpenAI 추론 계열 모델(o1·o3·gpt-5)은 `max_tokens`를 거부하고 400을 낸다.
     /// 모델 칸은 자유 입력이라 앱에서 우회할 수단이 없으므로 OpenAI 본가에는 새 이름을 쓴다.
-    /// 로컬·호환 서버는 새 이름을 모르는 구현이 많아 기존 이름을 유지한다.
+    /// 호환 서버는 새 이름을 모르는 구현이 많아 기존 이름을 유지한다.
     private static func outputTokenKey(for provider: AIProvider) -> String {
         provider == .openAI ? "max_completion_tokens" : "max_tokens"
     }

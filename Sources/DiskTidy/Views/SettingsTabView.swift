@@ -127,7 +127,8 @@ struct SettingsTabView: View {
                 Text("""
                 챗봇에 질문하면 그 순간 보고 있는 탭의 항목 이름·경로·용량·선택 상태가 \
                 선택한 제공자의 서버로 전송됩니다. 파일 내용은 보내지 않습니다. \
-                로컬에서만 처리하려면 Ollama 같은 로컬 제공자를 쓰세요.
+                기기 밖으로 내보내고 싶지 않다면 OpenAI 호환(직접 입력)에 \
+                로컬 서버 주소를 넣으세요.
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -157,8 +158,8 @@ struct SettingsTabView: View {
         switch settings.provider.transport {
         case .http:
             Text("버전 경로(/v1/messages, /v1/chat/completions)는 자동으로 붙습니다. "
-                + "평문 http는 루프백(localhost · 127.0.0.1 · ::1)에만 허용하고, "
-                + "키가 필요 없는 로컬 제공자에 한해 *.local LAN 주소도 허용합니다.")
+                + "평문 http는 루프백(localhost · 127.0.0.1 · ::1)에만 허용합니다 — "
+                + "원격에 평문으로 보내면 API 키가 그대로 노출됩니다.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .localCLI(let tool):

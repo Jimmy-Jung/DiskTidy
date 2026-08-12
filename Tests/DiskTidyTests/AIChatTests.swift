@@ -159,33 +159,13 @@ struct AIEndpointURLTests {
         #expect(url.path == "/v1/chat/completions")
     }
 
-    @Test("*.local 평문은 키가 필요 없는 제공자에만 허용한다")
-    func lanPlaintextIsGatedByKeyRequirement() throws {
-        let allowed = try AIRequestBuilder.endpointURL(
-            base: "http://gpu-box.local:8000",
-            format: .openAIChatCompletions,
-            allowsLANPlaintext: true
-        )
-        #expect(allowed.path == "/v1/chat/completions")
-
-        // 키를 요구하는 제공자에 허용하면 API 키가 LAN을 평문으로 지난다.
-        #expect(throws: AIChatError.insecureEndpoint("gpu-box.local")) {
-            try AIRequestBuilder.endpointURL(
-                base: "http://gpu-box.local:8000",
-                format: .openAIChatCompletions,
-                allowsLANPlaintext: false
-            )
-        }
-    }
-
-    @Test("원격 평문 http는 거부한다")
-    func rejectsRemotePlaintext() {
-        #expect(throws: AIChatError.insecureEndpoint("api.example.com")) {
-            try AIRequestBuilder.endpointURL(
-                base: "http://api.example.com",
-                format: .openAIChatCompletions,
-                allowsLANPlaintext: true
-            )
+    @Test("루프백이 아닌 평문 http는 거부한다", arguments: [
+        "http://api.example.com", "http://gpu-box.local:8000",
+    ])
+    func rejectsNonLoopbackPlaintext(base: String) throws {
+        let host = try #require(URL(string: base)?.host)
+        #expect(throws: AIChatError.insecureEndpoint(host)) {
+            try AIRequestBuilder.endpointURL(base: base, format: .openAIChatCompletions)
         }
     }
 
@@ -260,34 +240,21 @@ struct AIRequestBuilderTests {
         #expect(openAI["max_completion_tokens"] as? Int == AIRequestBuilder.maximumOutputTokens)
         #expect(openAI["max_tokens"] == nil)
 
-        // 반대로 로컬·호환 서버는 새 이름을 모르는 구현이 많다.
-        let ollama = try jsonBody(
+        // 반대로 호환 서버는 새 이름을 모르는 구현이 많다.
+        let compatible = try jsonBody(
             AIRequestBuilder.makeRequest(
-                settings: AISettings(provider: .ollama),
-                apiKey: nil,
+                settings: AISettings(
+                    provider: .openAICompatible,
+                    baseURL: "https://gateway.example.com",
+                    model: "internal-model"
+                ),
+                apiKey: "sk-test-key",
                 systemPrompt: systemPrompt,
                 messages: messages
             )
         )
-        #expect(ollama["max_tokens"] as? Int == AIRequestBuilder.maximumOutputTokens)
-        #expect(ollama["max_completion_tokens"] == nil)
-    }
-
-    @Test("로컬 제공자에는 콜드 스타트를 견디는 타임아웃을 준다")
-    func localProviderGetsLongerTimeout() throws {
-        let remote = try AIRequestBuilder.makeRequest(
-            settings: AISettings(provider: .anthropic),
-            apiKey: "sk-test-key",
-            systemPrompt: systemPrompt,
-            messages: messages
-        )
-        let local = try AIRequestBuilder.makeRequest(
-            settings: AISettings(provider: .ollama),
-            apiKey: nil,
-            systemPrompt: systemPrompt,
-            messages: messages
-        )
-        #expect(local.timeoutInterval > remote.timeoutInterval)
+        #expect(compatible["max_tokens"] as? Int == AIRequestBuilder.maximumOutputTokens)
+        #expect(compatible["max_completion_tokens"] == nil)
     }
 
     @Test("API 키는 본문에 절대 들어가지 않는다")
@@ -320,16 +287,19 @@ struct AIRequestBuilderTests {
         }
     }
 
-    @Test("로컬 제공자는 키 없이도 요청을 만든다")
-    func localProviderNeedsNoKey() throws {
+    @Test("루프백 로컬 서버는 평문 http로도 요청을 만든다")
+    func loopbackServerIsAllowed() throws {
         let request = try AIRequestBuilder.makeRequest(
-            settings: AISettings(provider: .ollama),
-            apiKey: nil,
+            settings: AISettings(
+                provider: .openAICompatible,
+                baseURL: "http://localhost:1234",
+                model: "local-model"
+            ),
+            apiKey: "sk-test-key",
             systemPrompt: systemPrompt,
             messages: messages
         )
-        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
-        #expect(request.url?.absoluteString == "http://localhost:11434/v1/chat/completions")
+        #expect(request.url?.absoluteString == "http://localhost:1234/v1/chat/completions")
     }
 
     @Test("모델이 비면 요청을 만들지 않는다")
@@ -394,11 +364,11 @@ struct AIModelCatalogTests {
         #expect(anthropic.value(forHTTPHeaderField: "anthropic-version") == "2023-06-01")
         #expect(anthropic.httpBody == nil)
 
-        let ollama = try AIRequestBuilder.makeModelsRequest(
-            settings: AISettings(provider: .ollama), apiKey: nil
+        let openAI = try AIRequestBuilder.makeModelsRequest(
+            settings: AISettings(provider: .openAI), apiKey: "sk-test-key"
         )
-        #expect(ollama.url?.absoluteString == "http://localhost:11434/v1/models")
-        #expect(ollama.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(openAI.url?.absoluteString == "https://api.openai.com/v1/models")
+        #expect(openAI.value(forHTTPHeaderField: "Authorization") == "Bearer sk-test-key")
     }
 
     @Test("모델 이름이 비어 있어도 목록은 요청할 수 있다")
@@ -793,7 +763,7 @@ struct AICLIClientTests {
 @Suite("챗봇 대화 상태", .serialized)
 @MainActor
 struct ChatViewModelTests {
-    private let localSettings = AISettings(provider: .ollama)
+    private let stubSettings = AISettings(provider: .openAI)
 
     private func makeViewModel(status: Int, body: String) -> ChatViewModel {
         ChatViewModel(client: StubURLProtocol.makeClient(status: status, body: body))
@@ -812,8 +782,8 @@ struct ChatViewModelTests {
         let viewModel = makeViewModel(status: 200, body: body)
         viewModel.input = "요약해줘"
         viewModel.send(
-            settings: localSettings,
-            apiKey: nil,
+            settings: stubSettings,
+            apiKey: "sk-test",
             context: ScreenContext(title: "캐시", lines: ["항목 0개"])
         )
 
@@ -829,7 +799,7 @@ struct ChatViewModelTests {
         let viewModel = makeViewModel(status: 200, body: ": ping\n\ndata: [DONE]\n\n")
         viewModel.input = "요약해줘"
         viewModel.send(
-            settings: localSettings, apiKey: nil,
+            settings: stubSettings, apiKey: "sk-test",
             context: ScreenContext(title: "캐시", lines: [])
         )
 
@@ -852,7 +822,7 @@ struct ChatViewModelTests {
         let viewModel = makeViewModel(status: 200, body: body)
         viewModel.input = "길게 설명해줘"
         viewModel.send(
-            settings: localSettings, apiKey: nil,
+            settings: stubSettings, apiKey: "sk-test",
             context: ScreenContext(title: "캐시", lines: [])
         )
 
@@ -867,7 +837,7 @@ struct ChatViewModelTests {
         )
         viewModel.input = "요약해줘"
         viewModel.send(
-            settings: localSettings, apiKey: nil,
+            settings: stubSettings, apiKey: "sk-test",
             context: ScreenContext(title: "캐시", lines: [])
         )
 
@@ -897,7 +867,7 @@ struct ChatViewModelTests {
         let viewModel = ChatViewModel()
         viewModel.input = "요약해줘"
         viewModel.send(
-            settings: localSettings, apiKey: nil,
+            settings: stubSettings, apiKey: "sk-test",
             context: ScreenContext(title: "캐시", lines: [])
         )
         viewModel.cancel()
@@ -1178,14 +1148,16 @@ struct AISettingsViewModelTests {
         #expect(!viewModel.isConfigured)
     }
 
-    @Test("로컬 제공자는 키 없이 준비 완료이고 요청에도 키를 싣지 않는다")
-    func localProviderNeedsNoKey() {
+    @Test("루프백 로컬 서버는 키만 있으면 준비 완료다")
+    func loopbackServerIsConfigurable() {
         let viewModel = AISettingsViewModel(
             store: store, keyStore: InMemoryAPIKeyStore()
         )
-        viewModel.provider = .ollama
+        viewModel.provider = .openAICompatible
+        viewModel.baseURL = "http://localhost:1234"
+        viewModel.model = "local-model"
+        viewModel.apiKey = "sk-test"
         #expect(viewModel.isConfigured)
-        #expect(viewModel.apiKeyForRequest == nil)
     }
 
     @Test("모델 목록을 받아 오면 드롭다운 후보가 채워진다")
@@ -1247,7 +1219,7 @@ struct AISettingsViewModelTests {
         viewModel.refreshModels()
         #expect(await waitUntil { !viewModel.availableModels.isEmpty })
 
-        viewModel.provider = .ollama
+        viewModel.provider = .openAI
         #expect(viewModel.availableModels.isEmpty)
     }
 
@@ -1471,7 +1443,7 @@ struct ItemExplanationStoreTests {
         sizeBytes: 5_000_000_000,
         modifiedDate: nil
     )
-    private let localSettings = AISettings(provider: .ollama)
+    private let stubSettings = AISettings(provider: .openAI)
 
     private var subject: ExplanationSubject {
         ExplanationSubject(item: item, action: "휴지통으로 이동 (되돌릴 수 있음)")
@@ -1541,19 +1513,19 @@ struct ItemExplanationStoreTests {
     @Test("설명을 받아 키로 캐시한다")
     func cachesByKey() async {
         let store = makeStore(body: answerBody)
-        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        store.explain(subject, screenTitle: "Android 캐시", settings: stubSettings, apiKey: "sk-test")
 
         #expect(await waitUntil { store.state(for: subject) == .ready("빌드 캐시입니다.") })
 
         // 다시 물어도 캐시가 그대로 남는다.
-        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        store.explain(subject, screenTitle: "Android 캐시", settings: stubSettings, apiKey: "sk-test")
         #expect(store.state(for: subject) == .ready("빌드 캐시입니다."))
     }
 
     @Test("잊으면 다시 물을 수 있다")
     func forgetClearsCache() async {
         let store = makeStore(body: answerBody)
-        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        store.explain(subject, screenTitle: "Android 캐시", settings: stubSettings, apiKey: "sk-test")
         #expect(await waitUntil { store.state(for: subject) != nil })
 
         store.forget(subject)
@@ -1563,7 +1535,7 @@ struct ItemExplanationStoreTests {
     @Test("실패는 사유를 남긴다")
     func reportsFailure() async {
         let store = makeStore(body: #"{"error":{"message":"Incorrect API key"}}"#, status: 401)
-        store.explain(subject, screenTitle: "Android 캐시", settings: localSettings, apiKey: nil)
+        store.explain(subject, screenTitle: "Android 캐시", settings: stubSettings, apiKey: "sk-test")
 
         #expect(await waitUntil {
             if case .failed(let message) = store.state(for: subject) {

