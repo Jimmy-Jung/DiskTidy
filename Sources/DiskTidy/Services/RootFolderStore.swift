@@ -1,6 +1,11 @@
 import Foundation
 
 enum RootFolderStore {
+    /// 실제 저장소. 테스트가 프로덕션 도메인(`com.jimmy.disktidy`)에 쓰면 실행 중인 앱의
+    /// 설정을 건드리고, 그 앱이 들고 있던 캐시를 되쓰면서 읽기가 어긋난다. 그래서 갈아
+    /// 끼울 수 있게 둔다.
+    static var defaults: UserDefaults = AppDefaults.shared
+
     /// 스캔 루트로 허용하지 않는 경로. 전체 디스크 재귀는 `du` 프로세스를 폭발시키고
     /// 앱이 사실상 멈춘다. 취소 기능이 없으니 애초에 막는다.
     private static let forbiddenPaths: Set<String> = [
@@ -31,7 +36,7 @@ enum RootFolderStore {
 
     /// 사라진 폴더는 걸러서 돌려준다. 남겨두면 스캔이 조용히 0건을 내놓는다.
     static func load(key: String) -> [URL] {
-        let paths = UserDefaults.standard.stringArray(forKey: key) ?? []
+        let paths = defaults.stringArray(forKey: key) ?? []
         let urls = paths.map { URL(fileURLWithPath: $0) }
         let existing = urls.filter { FileManager.default.fileExists(atPath: $0.path) }
         if existing.count != urls.count { save(existing, key: key) }
@@ -39,6 +44,6 @@ enum RootFolderStore {
     }
 
     static func save(_ urls: [URL], key: String) {
-        UserDefaults.standard.set(urls.map(\.path), forKey: key)
+        defaults.set(urls.map(\.path), forKey: key)
     }
 }

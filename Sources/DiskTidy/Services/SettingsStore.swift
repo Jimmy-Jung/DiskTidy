@@ -14,7 +14,7 @@ protocol SettingsStore {
 struct UserDefaultsSettingsStore: SettingsStore {
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = AppDefaults.shared) {
         self.defaults = defaults
     }
 

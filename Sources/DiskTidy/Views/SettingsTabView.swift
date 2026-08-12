@@ -8,7 +8,7 @@ struct SettingsTabView: View {
     @State private var entersModelManually = false
 
     /// `ContentView`와 같은 키를 본다. 값이 바뀌면 그쪽 `onChange`가 창 레벨을 바꾼다.
-    @AppStorage(WindowPresenter.alwaysOnTopKey) private var isAlwaysOnTop = true
+    @AppStorage(WindowPresenter.alwaysOnTopKey, store: AppDefaults.shared) private var isAlwaysOnTop = true
 
     @State private var isConfirmingLocalCLI = false
 

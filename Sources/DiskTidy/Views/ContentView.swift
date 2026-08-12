@@ -72,9 +72,10 @@ struct ContentView: View {
     @EnvironmentObject private var navState: AppNavigationState
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     // 기본값을 켜 둔다. 툴바 아이콘만으로는 기능이 있는 줄 모른다.
-    @AppStorage("ChatPanelVisible") private var isChatVisible = true
-    @AppStorage(WindowPresenter.alwaysOnTopKey) private var isAlwaysOnTop = true
-    @AppStorage("ChatPanelWidth") private var chatWidth = ChatPanelView.defaultWidth
+    // `store:`를 명시해야 `swift run`과 설치된 앱이 같은 도메인을 쓴다 — `AppDefaults` 참고.
+    @AppStorage("ChatPanelVisible", store: AppDefaults.shared) private var isChatVisible = true
+    @AppStorage(WindowPresenter.alwaysOnTopKey, store: AppDefaults.shared) private var isAlwaysOnTop = true
+    @AppStorage("ChatPanelWidth", store: AppDefaults.shared) private var chatWidth = ChatPanelView.defaultWidth
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {

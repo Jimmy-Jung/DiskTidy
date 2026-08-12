@@ -19,7 +19,7 @@ enum WindowPresenter {
     /// 기본값은 켜짐. Dock 아이콘이 없어 가려지면 다시 찾을 방법이 없다.
     /// `ContentView`의 `@AppStorage` 기본값과 반드시 같아야 한다.
     static var isAlwaysOnTopEnabled: Bool {
-        UserDefaults.standard.object(forKey: alwaysOnTopKey) as? Bool ?? true
+        AppDefaults.shared.object(forKey: alwaysOnTopKey) as? Bool ?? true
     }
 
     /// 활성화가 아예 막힌 정책인지. 순수 함수로 떼어 둔다 — 이 판정을 빼먹으면

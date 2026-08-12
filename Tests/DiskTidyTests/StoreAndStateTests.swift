@@ -7,19 +7,21 @@ import Testing
 // MARK: - RootFolderStore 영속성
 
 /// 프로덕션 키(`ProjectCacheRoots` · `BigFileRoots`)를 건드리지 않도록
-/// 테스트마다 고유 키를 쓰고 끝나면 지운다.
+/// 테스트마다 고유 키를 쓰고 끝나면 지운다. 도메인도 테스트 프로세스 것으로 갈아 끼운다 —
+/// 기본값은 설치된 앱과 같은 `com.jimmy.disktidy`라서 실행 중인 앱 설정을 덮어쓴다.
 @Suite("RootFolderStore 영속성")
 struct RootFolderStorePersistenceTests {
     private let temp: TempDirectory
     private let key: String
 
     init() throws {
+        RootFolderStore.defaults = .standard
         temp = try TempDirectory()
         key = "DiskTidyTests-\(UUID().uuidString)"
     }
 
     private func cleanUp() {
-        UserDefaults.standard.removeObject(forKey: key)
+        RootFolderStore.defaults.removeObject(forKey: key)
     }
 
     @Test("저장한 폴더를 그대로 읽어온다")
@@ -44,7 +46,7 @@ struct RootFolderStorePersistenceTests {
         // 남겨두면 스캔이 조용히 0건을 내놓는다.
         #expect(RootFolderStore.load(key: key).map(\.path) == [alive.path])
         // 다음 실행에서 또 걸러내지 않도록 정리된 목록이 저장돼야 한다.
-        #expect(UserDefaults.standard.stringArray(forKey: key) == [alive.path])
+        #expect(RootFolderStore.defaults.stringArray(forKey: key) == [alive.path])
     }
 
     @Test("저장된 적 없는 키는 빈 배열을 준다")
@@ -100,12 +102,13 @@ struct RootFolderViewModelTests {
     private let key: String
 
     init() throws {
+        RootFolderStore.defaults = .standard
         temp = try TempDirectory()
         key = "DiskTidyTests-\(UUID().uuidString)"
     }
 
     private func cleanUp() {
-        UserDefaults.standard.removeObject(forKey: key)
+        RootFolderStore.defaults.removeObject(forKey: key)
     }
 
     @Test("저장된 값이 없으면 기본 폴더를 채우고 저장한다")
@@ -116,7 +119,7 @@ struct RootFolderViewModelTests {
         let viewModel = RootFolderViewModel(storeKey: key, defaultRoots: [downloads])
 
         #expect(viewModel.roots.map(\.path) == [downloads.path])
-        #expect(UserDefaults.standard.stringArray(forKey: key) == [downloads.path])
+        #expect(RootFolderStore.defaults.stringArray(forKey: key) == [downloads.path])
     }
 
     @Test("저장된 값이 있으면 기본 폴더를 무시한다")
@@ -142,7 +145,7 @@ struct RootFolderViewModelTests {
         viewModel.removeRoot(first)
 
         #expect(viewModel.roots.map(\.path) == [second.path])
-        #expect(UserDefaults.standard.stringArray(forKey: key) == [second.path])
+        #expect(RootFolderStore.defaults.stringArray(forKey: key) == [second.path])
     }
 
     @Test("목록에 없는 폴더를 지워도 아무 일도 없다")
@@ -168,7 +171,7 @@ struct RootFolderViewModelTests {
         viewModel.removeRoot(root)
 
         #expect(viewModel.roots.isEmpty)
-        #expect(UserDefaults.standard.stringArray(forKey: key) == [])
+        #expect(RootFolderStore.defaults.stringArray(forKey: key) == [])
     }
 }
 
