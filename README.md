@@ -62,7 +62,9 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 | OpenAI | `https://api.openai.com` | Chat Completions |
 | OpenAI 호환 (직접 입력) | 사용자가 입력 | Chat Completions |
 
-버전 경로(`/v1/messages`, `/v1/chat/completions`)는 앱이 붙인다. 루트만 넣으면 되고 `/v1`이나 문서에서 복사한 전체 엔드포인트 경로를 붙여도 흡수한다.
+버전 경로(`/v1/messages`, `/v1/chat/completions`)는 앱이 붙인다. 루트만 넣으면 되고 `/v1`이나 문서에서 복사한 전체 엔드포인트 경로를 붙여도 흡수한다. HTTP 요청은 60초에서 끊는다.
+
+**로컬 모델은 OpenAI 호환으로 붙인다.** 전용 Ollama 제공자를 두었다가 걷어냈다 — 8B 모델 하나에 메모리 18GB, 모델 캐시 17GB를 먹어서 디스크 정리 유틸리티가 요구할 자원이 아니었다. 대신 **OpenAI 호환 (직접 입력)** 에 `http://localhost:<포트>`를 넣으면 LM Studio · llama.cpp · Ollama 서버가 그대로 붙는다. 어느 것을 띄울지는 사용자가 정한다.
 
 ### 항목 설명 버튼 (ⓘ)
 
@@ -305,7 +307,8 @@ DiskTidy/
 - **임시파일 탭만 `CleanableListViewModel`을 쓰지 않는다.** `CleanableItem`의 `id`는 `UUID()`라 스캔 시점의 파일 동일성을 보존하지 않는다. 되돌릴 수 없는 삭제에 쓰면 스캔과 삭제 사이에 이름이 바뀐 다른 파일을 지운다. 그래서 `TempCandidate`가 `lstat` 값을 그대로 들고 다니고, 전용 ViewModel·View를 따로 둔다.
 - **`lsof`는 스캔당 한 번만 부른다.** `lsof +D /private/tmp`는 트리를 전수 순회해서 못 쓴다. `lsof -w -n -F0n -u <uid>`로 사용자 프로세스 전체의 열린 경로를 NUL 종료 필드로 한 번에 받는다(실측 1.2초, 약 89,000 필드). 줄 단위로 파싱하면 줄바꿈이 든 파일명에서 필드가 깨진다.
 - **AI 화면 컨텍스트는 값이 아니라 클로저로 등록한다.** 탭이 `onAppear`에서 스냅샷 함수를 `ChatContextStore`에 넘기고, 챗봇은 메시지를 보내는 순간 그 함수를 부른다. 값으로 굳히면 26GB 트리 스캔이 끝난 뒤 질문해도 등록 시점의 빈 목록을 설명한다.
-- **제공자는 넷이지만 클라이언트는 하나다.** 실제 와이어 포맷은 Anthropic Messages와 OpenAI Chat Completions 둘뿐이라 `AIWireFormat`으로 갈라 요청 생성(`AIRequestBuilder`)과 SSE 해석(`AIStreamParser`)만 분기한다. 둘 다 순수 함수라 네트워크 없이 테스트한다.
+- **Ollama 전용 제공자는 걷어냈다.** 8B 모델 하나를 띄우자 메모리를 18GB 잡아 맥이 멈췄고 모델 캐시가 17GB를 먹었다 — 디스크를 정리하러 온 사용자에게 요구할 자원이 아니다. 로컬로 돌리는 길 자체를 막지는 않았다(위 **OpenAI 호환** 참고). Ollama가 유일한 무키 HTTP 제공자였던 탓에 LAN 평문을 허용하던 분기가 함께 죽어, 평문 `http`는 이제 루프백만 허용한다.
+- **제공자는 여럿이지만 클라이언트는 하나다.** 실제 와이어 포맷은 Anthropic Messages와 OpenAI Chat Completions 둘뿐이라 `AIWireFormat`으로 갈라 요청 생성(`AIRequestBuilder`)과 SSE 해석(`AIStreamParser`)만 분기한다. 둘 다 순수 함수라 네트워크 없이 테스트한다.
 - **스캔과 삭제가 같은 루트 정책(`TempRootPolicy.production`)을 쓴다.** 둘이 다른 판정을 하면 안전 규칙이 통째로 무너지므로, UI·삭제 호출부에는 루트를 받는 API를 아예 만들지 않았다.
 
 ## 기여

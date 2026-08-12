@@ -64,7 +64,9 @@ The speech-bubble toolbar button — or **View → Show Inspector (⌃⌘I)** �
 | OpenAI | `https://api.openai.com` | Chat Completions |
 | OpenAI-compatible (custom) | you provide | Chat Completions |
 
-The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter the root only; a trailing slash, a `/v1`, or a full endpoint path copied from the docs is absorbed.
+The app appends the version path (`/v1/messages`, `/v1/chat/completions`). Enter the root only; a trailing slash, a `/v1`, or a full endpoint path copied from the docs is absorbed. HTTP requests time out after 60 seconds.
+
+**Local models connect through the OpenAI-compatible provider.** A dedicated Ollama provider existed and was removed — a single 8B model held 18 GB of memory and its model cache took 17 GB, which is not something a disk-cleanup utility should ask of you. Instead, point **OpenAI-compatible (custom)** at `http://localhost:<port>` and LM Studio, llama.cpp or an Ollama server all work. Which one to run is your call.
 
 ### Item explanation button (ⓘ)
 
@@ -245,7 +247,8 @@ Each build generates a fresh ad-hoc signature, so macOS may re-ask for folder pe
 - **The temp-files tab is the one tab that does not use `CleanableListViewModel`.** `CleanableItem.id` is a fresh `UUID()`, so it does not preserve file identity as of the scan. Using it for an irreversible delete would remove whatever file happens to carry that name at deletion time. `TempCandidate` carries the raw `lstat` values instead, with its own view model and view.
 - **`lsof` runs exactly once per scan.** `lsof +D /private/tmp` walks the whole tree and is unusable. `lsof -w -n -F0n -u <uid>` returns every open path for the user's processes as NUL-terminated fields in one shot (measured: 1.2 s, ~89,000 fields). Parsing line by line breaks on filenames containing newlines.
 - **AI screen context is registered as a closure, not a value.** Each tab hands `ChatContextStore` a snapshot function in `onAppear`, and the assistant calls it the moment you send a message. Freezing a value would describe the empty list captured before a 26 GB tree scan finished.
-- **Four providers, one client.** There are only two real wire formats — Anthropic Messages and OpenAI Chat Completions — so `AIWireFormat` splits request building (`AIRequestBuilder`) and SSE parsing (`AIStreamParser`). Both are pure functions and are tested without a network.
+- **The dedicated Ollama provider was removed.** A single 8B model held 18 GB of memory and froze the machine, and its model cache took 17 GB — not a demand to place on someone who came here to free disk space. Running locally is still possible (see **OpenAI-compatible** above). Ollama was the only key-less HTTP provider, so the branch that allowed LAN plaintext died with it; plaintext `http` is now loopback-only.
+- **Several providers, one client.** There are only two real wire formats — Anthropic Messages and OpenAI Chat Completions — so `AIWireFormat` splits request building (`AIRequestBuilder`) and SSE parsing (`AIStreamParser`). Both are pure functions and are tested without a network.
 - **Scanning and deletion share one root policy (`TempRootPolicy.production`).** If the two disagreed, every safety rule would collapse, so no API taking a root is exposed to the UI or to callers of the deleter.
 - **Path containment compares UTF-8 bytes, not `String.hasPrefix`.** `hasPrefix` works on grapheme clusters, so a filename starting with a combining mark merges with the `/` separator and a real descendant is judged "not a descendant".
 
