@@ -18,17 +18,45 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            Button("앱 열기") {
+            MenuRow(title: "앱 열기") {
                 openWindow(id: "main")
                 WindowPresenter.present(alwaysOnTop: WindowPresenter.isAlwaysOnTopEnabled)
             }
-            .buttonStyle(.plain)
 
-            Button("종료") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.plain)
+            MenuRow(title: "종료") { NSApplication.shared.terminate(nil) }
         }
         .padding(12)
         .frame(width: 220)
         .onAppear { storageMonitor.refresh() }
+    }
+}
+
+/// 메뉴 행. `.plain` 버튼의 히트 영역은 라벨 크기 그대로라 텍스트만 눌렸다 —
+/// 라벨을 행 폭으로 늘리고 `contentShape`로 투명한 나머지 영역까지 클릭을 받는다.
+/// 시스템 메뉴처럼 호버 중인 행은 강조색으로 칠해 지금 어디를 누를지 보여 준다.
+private struct MenuRow: View {
+    let title: String
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .foregroundStyle(isHovered ? Color(nsColor: .selectedMenuItemTextColor) : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isHovered ? Color.accentColor : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // 텍스트는 다른 내용과 같은 x=12에 맞추고, 하이라이트만 좌우로 6pt 넓게 그린다 —
+        // 시스템 메뉴가 텍스트보다 넓은 캡슐을 칠하는 것과 같은 모양이다.
+        .padding(.horizontal, -6)
+        .onHover { isHovered = $0 }
     }
 }
