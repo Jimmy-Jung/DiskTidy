@@ -10,6 +10,20 @@ struct SettingsTabView: View {
     /// `ContentView`와 같은 키를 본다. 값이 바뀌면 그쪽 `onChange`가 창 레벨을 바꾼다.
     @AppStorage(WindowPresenter.alwaysOnTopKey, store: AppDefaults.shared) private var isAlwaysOnTop = true
 
+    /// 개발자용 문의 창구. `UpdateChecker`가 보는 저장소와 같은 곳이다.
+    private static let gitHubIssueURL = URL(string: "https://github.com/Jimmy-Jung/DiskTidy/issues/new")!
+
+    /// 비개발자용 문의 창구. 제목에 앱 버전을 미리 채워 "버전이 뭐예요?" 왕복을 줄인다.
+    private static let contactMailURL: URL = {
+        let subject = "DiskTidy 문의 (v\(AppInfo.displayVersion))"
+        var components = URLComponents()
+        components.scheme = "mailto"
+        components.path = "joony300@gmail.com"
+        components.queryItems = [URLQueryItem(name: "subject", value: subject)]
+        // scheme·path·쿼리를 모두 코드로 채우므로 실패할 수 없다.
+        return components.url!
+    }()
+
     @State private var isConfirmingLocalCLI = false
 
     /// 로컬 CLI 제공자 옵트인.
@@ -134,6 +148,18 @@ struct SettingsTabView: View {
                 .foregroundStyle(.secondary)
 
                 Text("챗봇은 앱을 조작할 수 없습니다. 삭제·종료는 항상 사용자가 직접 버튼을 눌러야 합니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("개발자에게 문의") {
+                Link("GitHub 이슈 등록", destination: Self.gitHubIssueURL)
+                Text("버그 신고와 기능 제안은 이슈로 남겨 주세요. 재현 방법을 함께 적으면 빨리 고쳐집니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Link("메일 보내기", destination: Self.contactMailURL)
+                Text("GitHub 계정이 없다면 메일로 보내 주세요. 제목에 앱 버전이 미리 채워집니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
