@@ -196,7 +196,7 @@ shasum -a 256 -c DiskTidy-1.0.dmg.sha256
 ### 소스에서 빌드
 
 ```bash
-./Scripts/build-app.sh    # release 빌드 → DiskTidy.app → ~/Applications 설치
+./Scripts/build-app.sh    # release 빌드 → DiskTidy.app → /Applications 설치
 ./Scripts/make-dmg.sh     # release 빌드 → dist/DiskTidy-<version>.dmg + .sha256
 ./Scripts/make-app.sh     # DiskTidy.app 번들만 (설치·배포 안 함)
 ```
@@ -263,7 +263,7 @@ DiskTidy/
   Scripts/
     run.sh                 # 개발 모드 실행
     make-app.sh            # DiskTidy.app 번들 생성 (아래 둘이 공유)
-    build-app.sh           # make-app.sh + ~/Applications 설치
+    build-app.sh           # make-app.sh + /Applications 설치
     make-dmg.sh            # make-app.sh + dist/DiskTidy-<version>.dmg + .sha256
     generate-icon.sh       # 아이콘 전체 파이프라인
     generate-icon.swift    # 아이콘 PNG 렌더러

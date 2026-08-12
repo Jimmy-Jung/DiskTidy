@@ -193,7 +193,7 @@ shasum -a 256 -c DiskTidy-1.0.dmg.sha256
 ### Build from source
 
 ```bash
-./Scripts/build-app.sh    # release build → DiskTidy.app → installs to ~/Applications
+./Scripts/build-app.sh    # release build → DiskTidy.app → installs to /Applications
 ./Scripts/make-dmg.sh     # release build → dist/DiskTidy-<version>.dmg + .sha256
 ./Scripts/make-app.sh     # DiskTidy.app bundle only (no install, no packaging)
 ```
