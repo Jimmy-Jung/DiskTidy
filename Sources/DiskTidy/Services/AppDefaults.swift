@@ -8,10 +8,13 @@ import Foundation
 /// 보이지 않았다 — 같은 앱인데 설정 파일이 둘로 갈라져 각자 다른 값을 들고 있었다.
 ///
 /// 이름으로 도메인을 고정하면 어느 쪽으로 실행해도 같은 저장소를 읽고 쓴다.
-/// `suiteName`이 자기 번들 ID와 같을 때 `UserDefaults(suiteName:)`은 nil을 줄 수 있는데,
-/// 그 경우 `.standard`가 이미 그 도메인이므로 폴백이 정확히 같은 저장소를 가리킨다.
 enum AppDefaults {
     static let suiteName = "com.jimmy.disktidy"
 
-    static let shared = UserDefaults(suiteName: suiteName) ?? .standard
+    static let shared: UserDefaults = {
+        // 자기 번들 ID를 스위트 이름으로 주면 AppKit이 "말이 안 되고 동작하지 않는다"고
+        // 콘솔에 경고한다(실측). 그 경우 `.standard`가 이미 그 도메인이므로 그대로 쓴다.
+        guard Bundle.main.bundleIdentifier != suiteName else { return .standard }
+        return UserDefaults(suiteName: suiteName) ?? .standard
+    }()
 }
