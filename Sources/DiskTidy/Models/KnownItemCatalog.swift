@@ -31,9 +31,57 @@ enum KnownItemCatalog {
                 + "다시 연결하면 Xcode가 다시 받아옵니다(수 분 걸립니다)."
         ),
         (
+            "/Library/Developer/XCTestDevices",
+            "Xcode가 병렬 테스트 때 만드는 시뮬레이터 클론입니다. 테스트가 끝나도 자동으로 "
+                + "지워지지 않아 수백 GB까지 쌓입니다. 지워도 됩니다 — 다음 병렬 테스트에서 "
+                + "다시 만들어집니다."
+        ),
+        (
             "/Library/Developer/CoreSimulator",
             "iOS 시뮬레이터의 기기 데이터와 캐시입니다. 지우면 시뮬레이터에 설치한 앱과 그 안의 "
                 + "데이터·로그인 상태가 사라집니다. 기기 자체는 다시 만들어집니다."
+        ),
+
+        // MARK: 패키지 매니저 전역 캐시 (GlobalCacheScanner가 노리는 경로들)
+        (
+            "/.npm/_cacache",
+            "npm이 내려받은 패키지 압축본 캐시입니다. 지워도 됩니다 — 다음 `npm install`에서 "
+                + "필요한 것만 다시 내려받습니다."
+        ),
+        (
+            "/.cocoapods/repos",
+            "CocoaPods의 스펙 저장소 캐시입니다. 지워도 됩니다 — 다음 `pod install`에서 CDN을 "
+                + "통해 다시 받아옵니다."
+        ),
+        (
+            "/Library/Caches/org.swift.swiftpm",
+            "Swift Package Manager가 내려받은 패키지 캐시입니다. 지워도 됩니다 — 다음 패키지 "
+                + "해석 때 다시 내려받습니다."
+        ),
+        (
+            "/Library/pnpm/store",
+            "pnpm의 콘텐츠 주소 저장소입니다. 지워도 됩니다 — 다음 설치에서 다시 내려받지만 "
+                + "모든 pnpm 프로젝트가 공유하는 저장소라 첫 설치가 오래 걸립니다."
+        ),
+        (
+            "/.bun/install/cache",
+            "Bun이 내려받은 패키지 캐시입니다. 지워도 됩니다 — 다음 `bun install`에서 다시 "
+                + "내려받습니다."
+        ),
+        (
+            "/.cargo/registry",
+            "Cargo(Rust)가 내려받은 크레이트 레지스트리입니다. 지워도 됩니다 — 다음 빌드에서 "
+                + "다시 내려받습니다."
+        ),
+        (
+            "/Library/Caches/pip",
+            "pip이 내려받은 파이썬 패키지 캐시입니다. 지워도 됩니다 — 다음 설치에서 다시 "
+                + "내려받습니다."
+        ),
+        (
+            "/Library/Caches/uv",
+            "uv(파이썬 패키지 매니저)의 캐시입니다. 지워도 됩니다 — 다음 설치에서 다시 "
+                + "내려받습니다."
         ),
 
         // MARK: Gradle · Android

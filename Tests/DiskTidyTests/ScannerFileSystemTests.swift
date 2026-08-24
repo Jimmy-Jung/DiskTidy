@@ -456,3 +456,44 @@ struct SymlinkedScanRootTests {
         #expect(item.path.path.hasSuffix("/real/big"))
     }
 }
+
+// MARK: - GlobalCacheScanner
+
+@Suite("GlobalCacheScanner")
+struct GlobalCacheScannerTests {
+    private let temp: TempDirectory
+
+    init() throws { temp = try TempDirectory() }
+
+    @Test("존재하는 패키지 캐시만 라벨을 붙여 크기 내림차순으로 모은다")
+    func collectsExistingCachesLargestFirst() throws {
+        let home = try temp.makeDirectory("home")
+        try temp.makeFile("home/.npm/_cacache/payload.bin", bytes: 256 * 1024)
+        try temp.makeFile("home/.cocoapods/repos/specs.bin", bytes: 8 * 1024)
+
+        let items = GlobalCacheScanner.scan(home: home)
+
+        #expect(items.map(\.name) == ["npm 캐시", "CocoaPods 스펙 저장소"])
+        #expect(items[0].sizeBytes > items[1].sizeBytes)
+    }
+
+    @Test("아무 캐시도 없는 홈은 빈 배열을 준다")
+    func emptyHomeGivesEmpty() throws {
+        let home = try temp.makeDirectory("home")
+
+        #expect(GlobalCacheScanner.scan(home: home).isEmpty)
+    }
+
+    @Test("설정이 섞인 도구 루트가 아니라 캐시 하위 경로만 집는다")
+    func targetsCacheSubpathsOnly() throws {
+        let home = try temp.makeDirectory("home")
+        // `~/.cargo`에는 자격증명(credentials.toml)이 함께 있다. 루트를 집으면 사고다.
+        try temp.makeFile("home/.cargo/credentials.toml", bytes: 16)
+        try temp.makeFile("home/.cargo/registry/cache.bin", bytes: 4 * 1024)
+
+        let items = GlobalCacheScanner.scan(home: home)
+
+        #expect(items.count == 1)
+        #expect(items[0].path.path.hasSuffix("/.cargo/registry"))
+    }
+}

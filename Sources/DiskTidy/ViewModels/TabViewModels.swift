@@ -18,6 +18,7 @@ final class TabViewModels: ObservableObject {
         defaultRoots: [FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads")]
     )
     let bigFiles = CleanableListViewModel(rootScan: { BigFileScanner.scan(roots: $0) })
+    let packageCache = CleanableListViewModel(scan: { GlobalCacheScanner.scan() })
     let androidCache = CleanableListViewModel(scan: { AndroidCacheScanner.scan() })
     // AVD 디렉터리를 지울 때 짝인 `<name>.ini` 포인터 파일도 함께 정리한다.
     let androidEmulator = CleanableListViewModel(

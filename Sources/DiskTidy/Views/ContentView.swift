@@ -18,6 +18,8 @@ private let sidebarItems: [SidebarItem] = [
     SidebarItem(id: 7, title: "Android 에뮬레이터", systemImage: "display"),
     SidebarItem(id: 8, title: "임시파일", systemImage: "clock.badge.xmark"),
     SidebarItem(id: 9, title: "개발 데몬", systemImage: "memorychip"),
+    // 설정 탭 id(10)는 챗봇 패널이 참조하는 고정값이라 새 탭은 그 뒤 번호를 쓴다.
+    SidebarItem(id: 11, title: "패키지 캐시", systemImage: "cube.box"),
     SidebarItem(id: AppNavigationState.settingsTab, title: "설정", systemImage: "gearshape"),
 ]
 
@@ -35,7 +37,7 @@ struct ContentView: View {
     var body: some View {
         // 사이드바를 접지 못하게 고정한다. 접고 펴는 동안 macOS가 툴바를 다시
         // 배치하면서 오버플로 표시(»)를 한 프레임 깜빡 그렸다 지운다 — 툴바 아이템을
-        // 전부 빼도 재현되므로 우리 쪽에서 막을 방법이 없다(실측). 탭이 11개뿐이라
+        // 전부 빼도 재현되므로 우리 쪽에서 막을 방법이 없다(실측). 탭이 12개뿐이라
         // 접는 이득도 없다. 시스템 설정 앱처럼 항상 보이는 사이드바로 둔다.
         NavigationSplitView(columnVisibility: .constant(.all)) {
             // 업데이트 버튼은 사이드바 맨 아래에 둔다. 툴바에 두면 제목과 한 유리 캡슐로
@@ -101,6 +103,7 @@ struct ContentView: View {
         case 7: AndroidEmulatorTabView(viewModel: tabs.androidEmulator)
         case 8: TempTabView(viewModel: tabs.temp)
         case 9: MemoryTabView(viewModel: tabs.memory)
+        case 11: PackageCacheTabView(viewModel: tabs.packageCache)
         case AppNavigationState.settingsTab: SettingsTabView()
         default: StorageTabView()
         }
