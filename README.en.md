@@ -28,15 +28,15 @@ The menu-bar item shows SSD usage at all times; clicking it opens a minimal drop
 
 ## Features
 
-Eleven screens in a sidebar, plus a persistent menu-bar item and an AI assistant inspector on the right. Reopening a tab shows the previous scan results immediately while a fresh scan runs in the background.
+Twelve screens in a sidebar, plus a persistent menu-bar item and an AI assistant inspector on the right. Reopening a tab shows the previous scan results immediately while a fresh scan runs in the background.
 
-The sidebar is always open at a fixed width. While it collapses and expands, macOS re-lays out the toolbar and flashes the overflow indicator (») for a frame; this reproduces even with every toolbar item removed, so the app cannot prevent it (measured). With only eleven tabs there is nothing to gain by collapsing it.
+The sidebar is always open at a fixed width. While it collapses and expands, macOS re-lays out the toolbar and flashes the overflow indicator (») for a frame; this reproduces even with every toolbar item removed, so the app cannot prevent it (measured). With only twelve tabs there is nothing to gain by collapsing it.
 
 | Screen | Contents |
 |---|---|
 | SSD usage | Total / used / free capacity and usage percentage |
 | App caches | Per-app directories under `~/Library/Caches` |
-| Simulators | iOS simulators sorted by last use; delete device or erase data |
+| Simulators | iOS simulators sorted by last use; delete device or erase data. Parallel-test clones (`XCTestDevices`) and runtimes (OS disk images) are managed here too |
 | Project caches | Recursive scan for build caches under folders you pick (rules below) |
 | Xcode caches | `DerivedData`, iOS/watchOS/tvOS DeviceSupport, Archives. Reads them even when symlinked to an external drive |
 | Large files | Files over 200 MB under folders you pick (defaults to `~/Downloads`) |
@@ -44,6 +44,7 @@ The sidebar is always open at a fixed width. While it collapses and expands, mac
 | Android emulators | AVDs in `~/.android/avd`; deletion also clears the `.ini` pointer |
 | Temp files | Top-level entries in `/private/tmp` and `$TMPDIR` (safety rules and limits below) |
 | Dev daemons | Memory and swap metrics; terminate long-running dev daemons (Gradle, Kotlin) |
+| Package caches | Global caches for npm, pnpm, Bun, Yarn, CocoaPods, SwiftPM, Carthage, pip, uv, Cargo, and Homebrew (paths below) |
 | Settings | AI provider connection (provider, API root URL, model, API key), local CLI provider opt-in, window behavior (always on top), developer contact (GitHub issue · email) |
 
 The menu-bar item shows SSD usage, refreshed every 60 seconds. Clicking it opens a minimal dropdown with a gauge plus Open / Quit.
@@ -134,6 +135,33 @@ Directories whose names unambiguously mean "build cache" are matched by name. Ge
 
 `build`, `dist`, and `target` can be committed source directories, so they are left alone without a marker. Overly broad scan roots (`/`, `~`, `/Users`, …) are rejected.
 
+## Package cache paths
+
+The project-cache tab only looks *inside* projects (`node_modules`, `Pods`). What actually grows by gigabytes are the global caches in your home directory, and no tab was showing them — so they get their own tab. Gradle belongs to the Android caches tab and is excluded here.
+
+| Tool | Path |
+|---|---|
+| npm | `~/.npm/_cacache` |
+| pnpm | `~/Library/pnpm/store` |
+| Bun | `~/.bun/install/cache` |
+| Yarn | `~/Library/Caches/Yarn` |
+| CocoaPods | `~/.cocoapods/repos`, `~/Library/Caches/CocoaPods` |
+| SwiftPM | `~/Library/Caches/org.swift.swiftpm` |
+| Carthage | `~/Library/Caches/org.carthage.CarthageKit` |
+| pip | `~/Library/Caches/pip` |
+| uv | `~/Library/Caches/uv` |
+| Cargo | `~/.cargo/registry` |
+| Homebrew | `~/Library/Caches/Homebrew` |
+
+**Only cache subpaths are targeted, never the tool root.** `~/.cargo` holds `credentials.toml` and `~/.cocoapods` holds configuration; wiping the root would take out things that never come back. Every listed path is the "re-downloaded on the next install" kind. Paths that do not exist never appear in the list.
+
+## Simulator test clones and runtimes
+
+Two extra sections sit above the device list. Both go through `simctl`, so neither is reversible and both require a confirmation dialog.
+
+- **Test clones (`~/Library/Developer/XCTestDevices`)** — Xcode creates simulator clones for every parallel test run and never removes them afterwards, so they pile up into hundreds of gigabytes. Their names are all UUIDs, so instead of a list you get a count, a total, and a last-used date, plus one `simctl --set testing delete all` button. The next parallel test run recreates whatever it needs. The size comes from **walking the disk**, not from the `--set testing` listing — orphaned clones whose runtime was deleted drop out of that listing but still occupy disk.
+- **Runtimes (OS disk images)** — read via `simctl runtime list`, grouped by platform with the newest version on top. Anything with a newer version installed for the same platform gets a **superseded** badge as a deletion hint. Versions are compared numerically, not as strings (`26.3.1` < `26.5`). `simctl` deletes runtimes in the background, so it is normal for a runtime to linger in the list as `Deleting` after the call succeeds. Deleted runtimes can be re-downloaded from Xcode Settings → Components.
+
 ## Temp-file safety rules
 
 `/tmp` is a shared directory. Its top level mixes unix sockets, files owned by other users, and markers that are still in use. An entry becomes a deletion candidate only if it passes **all five** rules. Anything that cannot be decided is dropped from the list.
@@ -164,8 +192,9 @@ Three more guards apply:
 
 ## Deletion policy
 
-- App caches, project caches, Xcode caches, large files, Android caches, Android emulators: **moved to Trash** (`FileManager.trashItem`) — recoverable.
+- App caches, project caches, Xcode caches, large files, Android caches, Android emulators, package caches: **moved to Trash** (`FileManager.trashItem`) — recoverable.
 - Simulator delete / erase: `xcrun simctl delete` / `erase` — irreversible, so a confirmation dialog is shown first.
+- Simulator test clones and runtimes: `simctl --set testing delete all` / `simctl runtime delete` — these skip the Trash as well, so a confirmation dialog is always required.
 - **Temp files: permanent delete.** Moving them to the Trash would not reclaim any disk blocks until the user empties it, which defeats the purpose. Because it is irreversible, a confirmation dialog is always shown. The procedure keeps the scan-time `st_dev + st_ino + uid + mode + mtime + atime`, re-checks it against the parent directory FD right before deletion, atomically moves the entry into a dedicated quarantine directory on the same volume with `renameatx_np(RENAME_EXCL)`, and deletes it only if the identity still matches at the quarantine location. If the app dies mid-move, the quarantined entry shows up in a **pending recovery** list on the next launch and is never removed automatically.
 - A successful deletion means "the path was removed". APFS snapshots or open files can delay the free-space increase, so the UI reports the number of deleted paths and the freshly read free space **separately**, and promises no amount reclaimed.
 - Failures (insufficient permissions, files in use, booted simulators) surface as an in-app warning banner and the item stays in the list. Details go to Console.app under the `com.jimmy.disktidy` subsystem.

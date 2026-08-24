@@ -9,3 +9,6 @@ dist/
 Resources/AppIcon.iconset/
 # 모자이크 전 원본. 캐시 항목명·프로젝트 경로가 그대로 담겨 있어 커밋하지 않는다.
 docs/screenshots-raw/
+
+### Serena ###
+.serena/
