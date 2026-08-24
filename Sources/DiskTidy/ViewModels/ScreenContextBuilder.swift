@@ -70,6 +70,19 @@ enum ScreenContextBuilder {
         if viewModel.isBusy { lines.append("상태: simctl 작업 중") }
         if let error = viewModel.errorMessage { lines.append("오류 배너: \(error)") }
 
+        if let summary = viewModel.testSummary {
+            lines.append(
+                "테스트 클론(XCTestDevices): \(summary.count)개, \(format(summary.sizeBytes)) "
+                    + "— ‘전체 삭제’ 버튼으로 일괄 삭제 (다음 병렬 테스트에서 재생성됨)"
+            )
+        }
+        if !viewModel.runtimes.isEmpty {
+            let described = viewModel.runtimes.map {
+                "\($0.displayName) \(format($0.sizeBytes))\($0.isSuperseded ? " [구버전]" : "")"
+            }
+            lines.append("런타임: " + described.joined(separator: ", "))
+        }
+
         let totalBytes = viewModel.items.reduce(0) { $0 + $1.sizeBytes }
         lines.append("기기 \(viewModel.items.count)개, 합계 \(format(totalBytes))")
         lines.append("선택 \(viewModel.selectedItems.count)개, \(format(viewModel.selectedBytes))")

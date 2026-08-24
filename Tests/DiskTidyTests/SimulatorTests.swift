@@ -172,6 +172,126 @@ struct SimulatorMakeItemsTests {
     }
 }
 
+// MARK: - SimulatorManager.testDeviceSummary
+
+@Suite("SimulatorManager.testDeviceSummary")
+struct TestDeviceSummaryTests {
+    private let temp: TempDirectory
+
+    init() throws { temp = try TempDirectory() }
+
+    @Test("클론 개수·합계 크기·가장 최근 수정일을 요약한다")
+    func summarizesClones() throws {
+        let root = try temp.makeDirectory("XCTestDevices")
+        let old = try temp.makeDirectory("XCTestDevices/UUID-OLD")
+        try temp.makeFile("XCTestDevices/UUID-NEW/data.img", bytes: 64 * 1024)
+        let newDir = root.appendingPathComponent("UUID-NEW")
+        try temp.setModificationDate(Date(timeIntervalSince1970: 1_600_000_000), of: old)
+        let recent = Date(timeIntervalSince1970: 1_700_000_000)
+        try temp.setModificationDate(recent, of: newDir)
+
+        let summary = SimulatorManager.testDeviceSummary(root: root)
+
+        #expect(summary.count == 2)
+        #expect(summary.sizeBytes >= 64 * 1024)
+        let lastUsed = try #require(summary.lastUsed)
+        #expect(abs(lastUsed.timeIntervalSince(recent)) < 1)
+    }
+
+    @Test("클론 디렉터리가 없으면 0개·0바이트다")
+    func emptyRootGivesZero() throws {
+        let root = try temp.makeDirectory("XCTestDevices")
+
+        let summary = SimulatorManager.testDeviceSummary(root: root)
+
+        #expect(summary == TestDeviceSummary(count: 0, sizeBytes: 0, lastUsed: nil))
+    }
+
+    @Test("루트 자체가 없어도 0개다 (병렬 테스트를 한 번도 안 돌린 환경)")
+    func missingRootGivesZero() {
+        let summary = SimulatorManager.testDeviceSummary(
+            root: temp.url.appendingPathComponent("nope")
+        )
+
+        #expect(summary.count == 0)
+        #expect(summary.sizeBytes == 0)
+    }
+
+    @Test("파일은 세지 않는다 — 클론은 항상 디렉터리다")
+    func ignoresLooseFiles() throws {
+        let root = try temp.makeDirectory("XCTestDevices")
+        try temp.makeFile("XCTestDevices/stray.plist", bytes: 1024)
+
+        #expect(SimulatorManager.testDeviceSummary(root: root).count == 0)
+    }
+}
+
+// MARK: - RuntimeManager
+
+@Suite("RuntimeManager")
+struct RuntimeManagerTests {
+    private func data(_ json: String) -> Data { Data(json.utf8) }
+
+    /// `simctl runtime list -j` 실측 스키마 (Xcode 26).
+    private let realShapeJSON = """
+    {
+      "AAAA": {
+        "build": "23F77", "deletable": true, "identifier": "AAAA",
+        "kind": "Patchable Cryptex Disk Image", "lastUsedAt": "2026-08-24T02:35:34Z",
+        "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+        "sizeBytes": 8494282293, "state": "Ready", "version": "26.5"
+      },
+      "BBBB": {
+        "build": "23D8133", "deletable": true, "identifier": "BBBB",
+        "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.iOS-26-3",
+        "sizeBytes": 8000000000, "state": "Ready", "version": "26.3.1"
+      },
+      "CCCC": {
+        "build": "22S99", "deletable": false, "identifier": "CCCC",
+        "runtimeIdentifier": "com.apple.CoreSimulator.SimRuntime.watchOS-11-0",
+        "sizeBytes": 4000000000, "state": "Ready", "version": "11.0"
+      }
+    }
+    """
+
+    @Test("실측 스키마를 파싱하고 플랫폼별 새 버전을 위로 정렬한다")
+    func parsesRealShape() {
+        let items = RuntimeManager.parseRuntimes(data(realShapeJSON))
+
+        #expect(items.map(\.id) == ["AAAA", "BBBB", "CCCC"])
+        #expect(items[0].displayName == "iOS 26.5 (23F77)")
+        #expect(items[0].sizeBytes == 8_494_282_293)
+        #expect(items[0].lastUsed != nil)
+        #expect(items[1].lastUsed == nil) // lastUsedAt 없는 레코드
+        #expect(items[2].platform == "watchOS")
+        #expect(!items[2].deletable)
+    }
+
+    @Test("같은 플랫폼의 구버전만 superseded로 표시한다")
+    func marksOlderVersionsOnly() {
+        let items = RuntimeManager.markSuperseded(
+            RuntimeManager.parseRuntimes(data(realShapeJSON))
+        )
+        let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+
+        // "26.3.1" vs "26.5"는 자릿수가 달라 문자열 비교로는 26.3.1이 크다.
+        // 숫자 비교가 아니면 여기서 뒤집힌다.
+        #expect(byID["AAAA"]?.isSuperseded == false)
+        #expect(byID["BBBB"]?.isSuperseded == true)
+        #expect(byID["CCCC"]?.isSuperseded == false) // watchOS 유일 버전
+    }
+
+    @Test("깨진 JSON은 빈 배열을 준다", arguments: ["", "not json", #"{"AAAA": 3}"#])
+    func malformedJSONGivesEmpty(json: String) {
+        #expect(RuntimeManager.parseRuntimes(data(json)).isEmpty)
+    }
+
+    @Test("없는 런타임 삭제는 실패로 돌아온다")
+    func deletingUnknownRuntimeFails() {
+        #expect(!RuntimeManager.deleteRuntime("00000000-0000-0000-0000-000000000000"))
+    }
+}
+
 // MARK: - SimulatorViewModel
 
 @Suite("SimulatorViewModel")
@@ -189,21 +309,56 @@ struct SimulatorViewModelTests {
         )
     }
 
-    @Test("목록을 채우고 진행 플래그를 되돌린다")
+    /// 기본 클로저는 실제 xcrun을 부른다. 단위 테스트는 전부 스텁으로 막는다.
+    private func makeViewModel(
+        list: @escaping @Sendable () -> [SimulatorItem] = { [] },
+        delete: @escaping @Sendable (String) -> Bool = { _ in true },
+        erase: @escaping @Sendable (String) -> Bool = { _ in true },
+        summarizeTestDevices: @escaping @Sendable () -> TestDeviceSummary = {
+            TestDeviceSummary(count: 0, sizeBytes: 0, lastUsed: nil)
+        },
+        deleteAllTestDevices: @escaping @Sendable () -> Bool = { true },
+        listRuntimes: @escaping @Sendable () -> [RuntimeItem] = { [] },
+        deleteRuntime: @escaping @Sendable (String) -> Bool = { _ in true }
+    ) -> SimulatorViewModel {
+        SimulatorViewModel(
+            list: list,
+            delete: delete,
+            erase: erase,
+            shutdownAll: { true },
+            summarizeTestDevices: summarizeTestDevices,
+            deleteAllTestDevices: deleteAllTestDevices,
+            listRuntimes: listRuntimes,
+            deleteRuntime: deleteRuntime
+        )
+    }
+
+    @Test("목록·테스트 클론 요약·런타임을 채우고 진행 플래그를 되돌린다")
     func refreshFillsItems() async {
         let scanned = [item("A"), item("B")]
-        let viewModel = SimulatorViewModel(list: { scanned })
+        let summary = TestDeviceSummary(count: 3, sizeBytes: 1024, lastUsed: nil)
+        let runtime = RuntimeItem(
+            id: "R1", platform: "iOS", version: "26.5", build: "23F77",
+            state: "Ready", deletable: true, sizeBytes: 8_000, lastUsed: nil
+        )
+        let viewModel = makeViewModel(
+            list: { scanned },
+            summarizeTestDevices: { summary },
+            listRuntimes: { [runtime] }
+        )
 
         viewModel.refresh()
 
         #expect(await waitUntil { !viewModel.isScanning })
         #expect(viewModel.items.map(\.id) == ["A", "B"])
+        #expect(viewModel.testSummary == summary)
+        #expect(viewModel.runtimes.map(\.id) == ["R1"])
     }
 
     @Test("선택한 기기만 삭제하고 목록을 다시 읽는다")
     func deletesSelectedThenRefreshes() async {
         let simctl = SimctlRecorder()
-        let viewModel = SimulatorViewModel(list: { [] }, delete: { simctl.perform($0) })
+        let viewModel = makeViewModel(delete: { simctl.perform($0) })
         viewModel.items = [item("A", selected: true), item("B"), item("C", selected: true)]
 
         viewModel.deleteSelected()
@@ -216,7 +371,7 @@ struct SimulatorViewModelTests {
     @Test("초기화 실패 건수를 동사와 함께 알린다")
     func reportsEraseFailures() async {
         let simctl = SimctlRecorder(failingUDIDs: ["A"])
-        let viewModel = SimulatorViewModel(list: { [] }, erase: { simctl.perform($0) })
+        let viewModel = makeViewModel(erase: { simctl.perform($0) })
         viewModel.items = [item("A", selected: true), item("B", selected: true)]
 
         viewModel.eraseSelected()
@@ -230,7 +385,7 @@ struct SimulatorViewModelTests {
     @Test("선택이 없으면 simctl을 부르지 않는다")
     func noSelectionIsNoOp() {
         let simctl = SimctlRecorder()
-        let viewModel = SimulatorViewModel(list: { [] }, delete: { simctl.perform($0) })
+        let viewModel = makeViewModel(delete: { simctl.perform($0) })
         viewModel.items = [item("A")]
 
         viewModel.deleteSelected()
@@ -241,7 +396,7 @@ struct SimulatorViewModelTests {
 
     @Test("선택 합계와 전체 선택·해제가 맞물린다")
     func selectionAggregates() {
-        let viewModel = SimulatorViewModel(list: { [] })
+        let viewModel = makeViewModel()
         viewModel.items = [item("A", bytes: 100), item("B", bytes: 250)]
 
         viewModel.selectAll(true)
@@ -250,5 +405,63 @@ struct SimulatorViewModelTests {
 
         viewModel.selectAll(false)
         #expect(viewModel.selectedBytes == 0)
+    }
+
+    @Test("테스트 클론 전체 삭제 후 목록을 다시 읽는다")
+    func deletesTestClonesThenRefreshes() async {
+        let called = SimctlRecorder()
+        let viewModel = makeViewModel(deleteAllTestDevices: { called.perform("all") })
+        viewModel.testSummary = TestDeviceSummary(count: 5, sizeBytes: 1024, lastUsed: nil)
+
+        viewModel.deleteTestClones()
+
+        #expect(await waitUntil { !viewModel.isBusy && !viewModel.isScanning })
+        #expect(called.calledUDIDs == ["all"])
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("테스트 클론이 0개면 삭제를 부르지 않는다")
+    func emptyTestClonesIsNoOp() {
+        let called = SimctlRecorder()
+        let viewModel = makeViewModel(deleteAllTestDevices: { called.perform("all") })
+        viewModel.testSummary = TestDeviceSummary(count: 0, sizeBytes: 0, lastUsed: nil)
+
+        viewModel.deleteTestClones()
+
+        #expect(!viewModel.isBusy)
+        #expect(called.calledUDIDs.isEmpty)
+    }
+
+    @Test("테스트 클론 삭제 실패를 배너로 알린다")
+    func reportsTestCloneFailure() async {
+        let viewModel = makeViewModel(deleteAllTestDevices: { false })
+        viewModel.testSummary = TestDeviceSummary(count: 5, sizeBytes: 1024, lastUsed: nil)
+
+        viewModel.deleteTestClones()
+
+        #expect(await waitUntil { !viewModel.isBusy })
+        #expect(viewModel.errorMessage?.contains("테스트 클론") == true)
+    }
+
+    @Test("런타임 삭제는 해당 ID로 부르고 목록을 다시 읽는다")
+    func deletesRuntimeByID() async {
+        let called = SimctlRecorder()
+        let viewModel = makeViewModel(deleteRuntime: { called.perform($0) })
+
+        viewModel.deleteRuntime(id: "RUNTIME-1")
+
+        #expect(await waitUntil { !viewModel.isBusy && !viewModel.isScanning })
+        #expect(called.calledUDIDs == ["RUNTIME-1"])
+        #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("런타임 삭제 실패를 배너로 알린다")
+    func reportsRuntimeFailure() async {
+        let viewModel = makeViewModel(deleteRuntime: { _ in false })
+
+        viewModel.deleteRuntime(id: "RUNTIME-1")
+
+        #expect(await waitUntil { !viewModel.isBusy })
+        #expect(viewModel.errorMessage?.contains("런타임") == true)
     }
 }

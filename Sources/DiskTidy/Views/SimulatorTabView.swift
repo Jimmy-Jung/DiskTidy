@@ -6,6 +6,10 @@ struct SimulatorTabView: View {
     @State private var showDeleteConfirm = false
     @State private var showEraseConfirm = false
     @State private var showShutdownConfirm = false
+    @State private var showTestCloneConfirm = false
+    /// 삭제 확인을 기다리는 런타임. 다이얼로그가 뜬 사이 목록이 갱신될 수 있어
+    /// 인덱스가 아니라 항목 자체를 붙잡는다.
+    @State private var runtimePendingDelete: RuntimeItem?
 
     private var selectedCount: Int { viewModel.selectedItems.count }
     private var isWorking: Bool { viewModel.isScanning || viewModel.isBusy }
@@ -26,6 +30,14 @@ struct SimulatorTabView: View {
 
             if let message = viewModel.errorMessage {
                 ErrorBanner(message: message) { viewModel.errorMessage = nil }
+            }
+
+            if let summary = viewModel.testSummary {
+                testCloneCard(summary)
+            }
+
+            if !viewModel.runtimes.isEmpty {
+                runtimeSection
             }
 
             List {
@@ -122,5 +134,132 @@ struct SimulatorTabView: View {
             Button("모두 종료", role: .destructive) { viewModel.shutdownAll() }
             Button("취소", role: .cancel) {}
         }
+        .confirmationDialog(
+            "테스트 클론 \(viewModel.testSummary?.count ?? 0)개를 모두 삭제합니다. "
+                + "되돌릴 수 없지만 다음 병렬 테스트에서 자동으로 다시 만들어집니다.",
+            isPresented: $showTestCloneConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("전체 삭제", role: .destructive) { viewModel.deleteTestClones() }
+            Button("취소", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "\(runtimePendingDelete?.displayName ?? "") 런타임을 삭제합니다. "
+                + "이 런타임의 시뮬레이터 기기들은 사용할 수 없게 됩니다.",
+            isPresented: Binding(
+                get: { runtimePendingDelete != nil },
+                set: { if !$0 { runtimePendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                if let runtime = runtimePendingDelete { viewModel.deleteRuntime(id: runtime.id) }
+                runtimePendingDelete = nil
+            }
+            Button("취소", role: .cancel) {}
+        }
+    }
+
+    /// 병렬 테스트 클론 요약 카드. 기기 이름이 전부 UUID라 목록 대신 합계만 보여 준다.
+    private func testCloneCard(_ summary: TestDeviceSummary) -> some View {
+        GroupBox {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("테스트 클론 (병렬 테스트가 만든 임시 기기)")
+                    Text(
+                        summary.count == 0
+                            ? "없음 — 병렬 테스트를 돌리면 여기에 쌓입니다"
+                            : "\(summary.count)개 · 마지막 사용 \(Self.dateString(summary.lastUsed))"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(summary.sizeString).monospacedDigit()
+                ExplanationButton(
+                    subject: ExplanationSubject(
+                        key: "simulator:test-clones",
+                        title: "테스트 클론",
+                        subtitle: "XCTestDevices",
+                        facts: [
+                            "항목: 병렬 테스트용 시뮬레이터 클론 \(summary.count)개",
+                            "크기: \(summary.sizeString)",
+                            "위치: ~/Library/Developer/XCTestDevices",
+                            "이 화면의 정리 방식: simctl --set testing delete all (되돌릴 수 없음)",
+                        ],
+                        knownDescription: """
+                        Xcode가 병렬 테스트를 돌릴 때 만드는 시뮬레이터 복제본입니다. 테스트가 \
+                        끝나도 자동으로 지워지지 않아 수백 GB까지 쌓일 수 있습니다. 지워도 됩니다 — \
+                        다음 병렬 테스트에서 필요한 만큼 다시 만들어집니다.
+                        """
+                    ),
+                    screenTitle: "시뮬레이터"
+                )
+                Button("전체 삭제", role: .destructive) { showTestCloneConfirm = true }
+                    .disabled(summary.count == 0 || isWorking)
+            }
+        }
+    }
+
+    /// 설치된 런타임 디스크 이미지. 몇 개 안 되므로 List 대신 고정 행으로 그린다.
+    private var runtimeSection: some View {
+        GroupBox {
+            VStack(spacing: 6) {
+                ForEach(viewModel.runtimes) { runtime in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(runtime.displayName)
+                            Text(runtime.state)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if runtime.isSuperseded {
+                            Text("구버전")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(.orange.opacity(0.2), in: Capsule())
+                                .foregroundStyle(.orange)
+                        }
+                        Spacer()
+                        Text(runtime.sizeString).monospacedDigit()
+                        ExplanationButton(
+                            subject: ExplanationSubject(
+                                key: "runtime:\(runtime.displayName)",
+                                title: runtime.displayName,
+                                subtitle: "시뮬레이터 런타임",
+                                facts: [
+                                    "항목: 시뮬레이터 런타임 \(runtime.displayName)",
+                                    "크기: \(runtime.sizeString)",
+                                    "상태: \(runtime.state)",
+                                    runtime.isSuperseded
+                                        ? "같은 플랫폼에 더 새 버전이 설치되어 있음"
+                                        : "이 플랫폼의 최신 설치 버전",
+                                    "이 화면의 정리 방식: simctl runtime delete (되돌릴 수 없음)",
+                                ],
+                                knownDescription: """
+                                시뮬레이터가 부팅할 때 쓰는 OS 디스크 이미지입니다. 지우면 이 버전의 \
+                                시뮬레이터 기기를 쓸 수 없게 되지만, Xcode 설정 > Components에서 \
+                                다시 내려받을 수 있습니다. 같은 플랫폼의 더 새 버전이 있다면 구버전은 \
+                                대개 지워도 됩니다.
+                                """
+                            ),
+                            screenTitle: "시뮬레이터"
+                        )
+                        Button("삭제", role: .destructive) { runtimePendingDelete = runtime }
+                            .disabled(!runtime.deletable || isWorking)
+                    }
+                }
+            }
+        } label: {
+            Text("런타임 (OS 디스크 이미지)")
+        }
+    }
+
+    private static func dateString(_ date: Date?) -> String {
+        guard let date else { return "알 수 없음" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 }

@@ -20,10 +20,27 @@ struct SimulatorEntry: Equatable {
     let state: String
 }
 
+/// `~/Library/Developer/XCTestDevices` 요약. 병렬 테스트가 만든 클론 기기들은
+/// 개별 이름이 전부 UUID라 목록으로 보여 줄 가치가 없다 — 개수·합계·마지막 사용만 본다.
+struct TestDeviceSummary: Equatable {
+    let count: Int
+    let sizeBytes: Int64
+    let lastUsed: Date?
+
+    var sizeString: String {
+        ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
+    }
+}
+
 enum SimulatorManager {
     static var defaultDevicesRoot: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Developer/CoreSimulator/Devices")
+    }
+
+    static var testDevicesRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Developer/XCTestDevices")
     }
 
     static func listDevices() -> [SimulatorItem] {
@@ -79,6 +96,24 @@ enum SimulatorManager {
         let comps = last.split(separator: "-")
         guard comps.count >= 2 else { return String(last) }
         return "\(comps[0]) \(comps.dropFirst().joined(separator: "."))"
+    }
+
+    /// 테스트 클론은 simctl에 물어볼 필요 없이 디스크가 진실이다. `--set testing` 목록은
+    /// 런타임이 지워진 고아 클론을 빼고 세지만, 그 고아도 디스크는 차지하고 있다.
+    static func testDeviceSummary(root: URL = testDevicesRoot) -> TestDeviceSummary {
+        let deviceDirs = DirectoryContents.ofRoot(root, includingPropertiesForKeys: [.isDirectoryKey])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+        return TestDeviceSummary(
+            count: deviceDirs.count,
+            sizeBytes: deviceDirs.isEmpty ? 0 : DiskScanner.sizeOfDirectory(root),
+            lastUsed: deviceDirs.compactMap { FileAttributes.modificationDate(of: $0) }.max()
+        )
+    }
+
+    /// Xcode는 병렬 테스트가 끝나도 클론을 지우지 않아 수백 GB까지 쌓인다.
+    /// 다음 병렬 테스트에서 자동으로 다시 만들어지므로 전체 삭제가 안전하다.
+    static func deleteAllTestDevices() -> Bool {
+        ShellRunner.runXcrun(["simctl", "--set", "testing", "delete", "all"]).succeeded
     }
 
     /// 삭제/초기화는 실패할 수 있다 (부팅 중인 기기 등). 성공 여부를 돌려준다.

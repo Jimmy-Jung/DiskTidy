@@ -3,6 +3,8 @@ import Foundation
 @MainActor
 final class SimulatorViewModel: ObservableObject {
     @Published var items: [SimulatorItem] = []
+    @Published var testSummary: TestDeviceSummary?
+    @Published var runtimes: [RuntimeItem] = []
     @Published var isScanning = false
     @Published var isBusy = false
     @Published var errorMessage: String?
@@ -13,17 +15,33 @@ final class SimulatorViewModel: ObservableObject {
     private let delete: @Sendable (String) -> Bool
     private let erase: @Sendable (String) -> Bool
     private let shutdownAllDevices: @Sendable () -> Bool
+    private let summarizeTestDevices: @Sendable () -> TestDeviceSummary
+    private let deleteAllTestDevices: @Sendable () -> Bool
+    private let listRuntimes: @Sendable () -> [RuntimeItem]
+    private let deleteRuntimeByID: @Sendable (String) -> Bool
 
     init(
         list: @escaping @Sendable () -> [SimulatorItem] = { SimulatorManager.listDevices() },
         delete: @escaping @Sendable (String) -> Bool = { SimulatorManager.deleteDevice($0) },
         erase: @escaping @Sendable (String) -> Bool = { SimulatorManager.eraseDevice($0) },
-        shutdownAll: @escaping @Sendable () -> Bool = { SimulatorManager.shutdownAll() }
+        shutdownAll: @escaping @Sendable () -> Bool = { SimulatorManager.shutdownAll() },
+        summarizeTestDevices: @escaping @Sendable () -> TestDeviceSummary = {
+            SimulatorManager.testDeviceSummary()
+        },
+        deleteAllTestDevices: @escaping @Sendable () -> Bool = {
+            SimulatorManager.deleteAllTestDevices()
+        },
+        listRuntimes: @escaping @Sendable () -> [RuntimeItem] = { RuntimeManager.listRuntimes() },
+        deleteRuntime: @escaping @Sendable (String) -> Bool = { RuntimeManager.deleteRuntime($0) }
     ) {
         self.list = list
         self.delete = delete
         self.erase = erase
         shutdownAllDevices = shutdownAll
+        self.summarizeTestDevices = summarizeTestDevices
+        self.deleteAllTestDevices = deleteAllTestDevices
+        self.listRuntimes = listRuntimes
+        deleteRuntimeByID = deleteRuntime
     }
 
     var selectedItems: [SimulatorItem] { items.filter(\.isSelected) }
@@ -33,11 +51,64 @@ final class SimulatorViewModel: ObservableObject {
         guard !isScanning else { return }
         isScanning = true
         let list = self.list
+        let summarizeTestDevices = self.summarizeTestDevices
+        let listRuntimes = self.listRuntimes
         Task {
-            let scanned = await Task.detached(priority: .userInitiated) { list() }.value
-            items = scanned
+            let scanned = await Task.detached(priority: .userInitiated) {
+                (devices: list(), testSummary: summarizeTestDevices(), runtimes: listRuntimes())
+            }.value
+            items = scanned.devices
+            testSummary = scanned.testSummary
+            runtimes = scanned.runtimes
             isScanning = false
         }
+    }
+
+    /// 병렬 테스트 클론을 한 번에 지운다. 개별 선택이 없는 이유는 `TestDeviceSummary` 참고.
+    func deleteTestClones() {
+        guard !isBusy, (testSummary?.count ?? 0) > 0 else { return }
+        isBusy = true
+        errorMessage = nil
+
+        let deleteAllTestDevices = self.deleteAllTestDevices
+        Task {
+            let succeeded = await Task.detached(priority: .userInitiated) {
+                deleteAllTestDevices()
+            }.value
+
+            isBusy = false
+            errorMessage = Self.testCloneFailureMessage(succeeded: succeeded)
+            refresh()
+        }
+    }
+
+    nonisolated static func testCloneFailureMessage(succeeded: Bool) -> String? {
+        succeeded ? nil : "테스트 클론을 삭제하지 못했습니다. 실행 중인 테스트를 먼저 끝내세요."
+    }
+
+    /// 런타임 하나를 지운다. simctl이 백그라운드에서 지우므로 새로고침 후에도
+    /// "Deleting" 상태로 한동안 목록에 남는 것이 정상이다.
+    func deleteRuntime(id: String) {
+        guard !isBusy else { return }
+        isBusy = true
+        errorMessage = nil
+
+        let deleteRuntimeByID = self.deleteRuntimeByID
+        Task {
+            let succeeded = await Task.detached(priority: .userInitiated) {
+                deleteRuntimeByID(id)
+            }.value
+
+            isBusy = false
+            errorMessage = Self.runtimeFailureMessage(succeeded: succeeded)
+            refresh()
+        }
+    }
+
+    nonisolated static func runtimeFailureMessage(succeeded: Bool) -> String? {
+        succeeded
+            ? nil
+            : "런타임을 삭제하지 못했습니다. 이 런타임을 쓰는 시뮬레이터를 먼저 종료하세요."
     }
 
     func deleteSelected() {
