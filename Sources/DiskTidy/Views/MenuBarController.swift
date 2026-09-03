@@ -4,24 +4,34 @@ import SwiftUI
 
 /// 메뉴바 아이콘을 AppKit `NSStatusItem`으로 직접 만든다.
 ///
-/// SwiftUI `MenuBarExtra`를 쓰면 **앱이 실행 직후 종료된다**(macOS 26.5 실측, lldb로 확인):
+/// SwiftUI `MenuBarExtra`를 쓰면 **앱이 실행 직후 종료된다**(macOS 26.5 실측). lldb로 잡은
+/// 종료 호출자:
 ///
-/// 1. macOS 26의 `MenuBarExtra`는 상태 아이콘을 FrontBoard 씬(`NSSceneStatusItem`)으로 호스팅하고,
-///    그 `NSStatusItem`을 `terminateOnRemoval = YES`로 만든다.
-/// 2. ControlCenter는 자동 배정 슬롯의 표시 여부를 기억한다 — 이 기계에서는
-///    `NSStatusItem Visible Item-0` … `Item-12`가 전부 `0`(숨김)이었다.
-/// 3. 그래서 실행 즉시 `NSStatusItemChangeVisibilityAction visible=0`이 앱에 전달되고,
-///    AppKit은 이것을 "사용자가 아이콘을 제거했다"로 읽어 앱을 종료한다.
-///    백트레이스: `-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`.
+///     frame #0  -[NSApplication terminate:]
+///     frame #1  -[NSSceneStatusItem scene:handleActions:]
+///     frame #2  -[FBSSceneObserver scene:handleActions:]
 ///
-/// 창은 정상적으로 만들어져 있었고 자동 종료(automatic termination)와도 무관하다 — 종료를 부르는
-/// 것은 상태 아이콘이다. `NSStatusItem.behavior`를 비워 두면 제거 자체가 불가능해져
-/// (`NSStatusItem.h`: "By default, an item is not removable") 이 경로가 사라진다.
-/// `behavior`는 macOS 10.12부터 있어 배포 대상(macOS 14)에서 버전 분기가 필요 없다.
+/// macOS 26의 `MenuBarExtra`는 상태 아이콘을 FrontBoard 씬(`NSSceneStatusItem`)으로 호스팅하고
+/// 그 아이콘에는 `terminateOnRemoval`이 켜져 있다. 실행 직후 시스템이
+/// `NSStatusItemChangeVisibilityAction visible=0`을 보내면 AppKit은 그것을 "사용자가 아이콘을
+/// 제거했다"로 읽어 앱을 종료한다. 상태 아이콘의 표시 여부는 **앱 자신의 설정 도메인**에
+/// autosave 이름으로 남는데(`com.jimmy.disktidy`의 `NSStatusItem Visible Item-N` ·
+/// `NSStatusItem VisibleCC Item-N`), 이 기계에서는 전부 `0`(숨김)이었다.
+///
+/// 최소 재현으로 범위를 좁혔다: `MenuBarExtra`만 있는 앱은 죽고(`.menu` 스타일도 동일),
+/// `Window` 씬만 있는 `LSUIElement` 앱은 산다. 즉 창 부재도 자동 종료도 원인이 아니다 —
+/// 종료를 부르는 것은 SwiftUI가 만든 상태 아이콘이다.
+///
+/// 그래서 씬으로 호스팅되지 않는 **고전 `NSStatusItem`** 을 직접 만든다. 여기에는 그 종료 경로가
+/// 없다(실측: 같은 번들·같은 창 구성으로 살아남고 아이콘도 보인다). `behavior = []`는 새로 만든
+/// 아이콘의 기본값과 같지만, `.terminationOnRemoval`이 다시 붙으면 이 버그가 되살아나므로
+/// 의도를 코드에 못 박아 둔다.
+///
+/// 확정하지 못한 것: 시스템이 실행 시점에 왜 "숨김"을 요청했는지. 메뉴바가 꽉 찬 환경에서
+/// 재현됐고 위 기록이 전부 숨김이었다는 사실만 남긴다.
 @MainActor
 final class MenuBarController {
-    /// 아이콘을 사용자가 제거할 수 없게 둔다. `.terminationOnRemoval`이 들어오는 순간
-    /// 위에 적은 종료 경로가 되살아난다.
+    /// 새 `NSStatusItem`의 기본값과 같은 값이다. 의도를 남기려고 명시한다 — 위 주석 참고.
     static let behavior: NSStatusItem.Behavior = []
 
     private var item: NSStatusItem?

@@ -33,13 +33,19 @@ It only collects the things that actually grow by gigabytes on a development mac
 reproduces on macOS 26 whenever the menu-bar icon is hidden — the process disappears before either
 the window or the menu-bar icon becomes usable.
 
-The cause was the menu-bar icon itself (confirmed under lldb). The status item SwiftUI's
-`MenuBarExtra` creates has `terminateOnRemoval` set, and ControlCenter remembers the visibility of
-auto-assigned status-item slots. If that slot is remembered as hidden, a "hide" action is delivered
-at launch and AppKit reads it as **the user removing the item**, so it terminates the app
-(`-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`).
+The cause was the menu-bar icon itself (terminate caller captured under lldb). On macOS 26 SwiftUI's
+`MenuBarExtra` hosts its status item as a FrontBoard scene (`NSSceneStatusItem`) and that item has
+`terminateOnRemoval` set. When the system delivers a "hide" action at launch, AppKit reads it as
+**the user removing the item** and terminates the app
+(`-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`). Status-item
+visibility is persisted in the app's own defaults domain (`NSStatusItem Visible Item-N`), and every
+slot was recorded as hidden on this machine.
 
-- The menu-bar icon is now a plain AppKit `NSStatusItem` marked non-removable. No removal path, no
+Minimal repros narrowed it down: an app with only a `MenuBarExtra` dies, an app with only a `Window`
+scene survives — so neither a missing window nor automatic termination is the cause. Why the system
+asked to hide the item at launch is still unconfirmed (it reproduced on a crowded menu bar).
+
+- The menu-bar icon is now a plain AppKit `NSStatusItem`, which is not scene-hosted and has no such
   termination path → [6. Window behavior](#6-window-behavior)
 - Closing the window leaves the app resident in the menu bar. Previously closing the last window
   quit the app, taking the menu-bar icon with it. Quit from the menu bar's "종료" row.
@@ -419,7 +425,7 @@ Activation alone measurably is not enough: when another app is full-screen it ow
 
 **Closing the window leaves the app resident in the menu bar** *(1.5.3)*. With the default behavior SwiftUI quits the app when its last window closes, and because this app has no Dock icon the menu-bar icon goes with it — leaving no way back in. Quit from the menu bar's "종료" row instead.
 
-**The menu-bar icon is a plain AppKit `NSStatusItem`, not SwiftUI's `MenuBarExtra`** *(1.5.3)*. The status item `MenuBarExtra` creates carries "terminate the app when removed" (`terminateOnRemoval`), so if ControlCenter remembers that icon slot as hidden the app dies the moment it launches — that was the launch failure in 1.5.2 and earlier. Creating the item directly and marking it non-removable (`behavior = []`) removes that path. The trade-off: users cannot drag the icon out of the menu bar either.
+**The menu-bar icon is a plain AppKit `NSStatusItem`, not SwiftUI's `MenuBarExtra`** *(1.5.3)*. The status item `MenuBarExtra` creates is scene-hosted and carries "terminate the app when removed" (`terminateOnRemoval`), so the app dies the moment the system asks to hide it — that was the launch failure in 1.5.2 and earlier. A plain `NSStatusItem` has no such path. `behavior = []` matches a fresh item's default, but it is stated in code and guarded by a test so that re-adding removal support cannot bring the bug back.
 
 ---
 

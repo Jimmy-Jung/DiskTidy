@@ -31,14 +31,19 @@ macOS SSD 용량 정리 유틸리티다. 앱 캐시 · 시뮬레이터 · 빌드
 메뉴바 아이콘이 숨겨져 있으면 재현된다 — 실행하면 0.5초 만에 프로세스가 사라져 창도 메뉴바
 아이콘도 보이지 않는다.
 
-원인은 메뉴바 아이콘이었다(lldb로 확인). SwiftUI `MenuBarExtra`가 만드는 상태 아이콘은
-`terminateOnRemoval`이 켜져 있는데, ControlCenter는 자동 배정 슬롯의 표시 여부를 기억한다.
-그 슬롯이 숨김으로 남아 있으면 실행 즉시 "숨김" 액션이 앱에 전달되고, AppKit은 그것을
-**사용자가 아이콘을 제거한 것**으로 읽어 앱을 종료한다
-(`-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`).
+원인은 메뉴바 아이콘이었다(lldb로 종료 호출자 확인). macOS 26의 SwiftUI `MenuBarExtra`는 상태
+아이콘을 FrontBoard 씬(`NSSceneStatusItem`)으로 호스팅하고 그 아이콘에는 `terminateOnRemoval`이
+켜져 있다. 실행 직후 시스템이 "숨김" 액션을 보내면 AppKit은 그것을 **사용자가 아이콘을 제거한
+것**으로 읽어 앱을 종료한다 (`-[NSSceneStatusItem scene:handleActions:]` →
+`-[NSApplication terminate:]`). 상태 아이콘의 표시 여부는 앱 자신의 설정 도메인에 남는데
+(`NSStatusItem Visible Item-N`), 이 기계에서는 전부 숨김으로 기록돼 있었다.
 
-- 메뉴바 아이콘을 AppKit `NSStatusItem`으로 직접 만들고 제거 불가로 둔다. 제거 경로가 없으면
-  종료 경로도 없다 → [6. 창 동작](#6-창-동작)
+최소 재현으로 범위를 좁혔다: `MenuBarExtra`만 있는 앱은 죽고, `Window` 씬만 있는 앱은 산다 —
+창 부재도 자동 종료도 원인이 아니다. 시스템이 왜 실행 시점에 숨김을 요청했는지는 확정하지
+못했다(메뉴바가 꽉 찬 환경에서 재현됐다).
+
+- 메뉴바 아이콘을 씬으로 호스팅되지 않는 고전 `NSStatusItem`으로 직접 만든다. 여기에는 그 종료
+  경로가 아예 없다 → [6. 창 동작](#6-창-동작)
 - 창을 닫아도 앱이 메뉴바에 남는다. 이전에는 마지막 창을 닫는 순간 앱이 종료돼 메뉴바 아이콘까지
   사라졌다. 종료는 메뉴바의 "종료"로 한다.
 - 인앱 업데이트 뒤 자동 재실행도 같은 경로로 죽었으므로 함께 해결된다.
@@ -422,7 +427,7 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 
 **창을 닫아도 앱은 메뉴바에 남는다** *(1.5.3)*. 기본 동작대로 두면 SwiftUI가 마지막 창이 닫힐 때 앱을 종료하는데, Dock 아이콘이 없는 앱이라 종료되면 메뉴바 아이콘까지 사라져 다시 열 방법이 없다. 종료는 메뉴바의 "종료"로만 한다.
 
-**메뉴바 아이콘은 SwiftUI `MenuBarExtra`가 아니라 AppKit `NSStatusItem`이다** *(1.5.3)*. `MenuBarExtra`가 만드는 상태 아이콘은 "제거되면 앱 종료"(`terminateOnRemoval`) 속성이 붙어 있고, ControlCenter가 그 아이콘 슬롯을 숨김으로 기억하고 있으면 실행 즉시 종료된다 — 1.5.2 이하에서 앱이 실행되지 않던 원인이다. AppKit으로 직접 만들면서 제거 불가(`behavior = []`)로 두어 그 경로를 없앴다. 대신 아이콘을 메뉴바에서 사용자가 빼는 것도 불가능하다.
+**메뉴바 아이콘은 SwiftUI `MenuBarExtra`가 아니라 AppKit `NSStatusItem`이다** *(1.5.3)*. `MenuBarExtra`가 만드는 상태 아이콘은 FrontBoard 씬으로 호스팅되고 "제거되면 앱 종료"(`terminateOnRemoval`)가 켜져 있어서, 시스템이 숨김을 요청하는 순간 앱이 종료된다 — 1.5.2 이하에서 앱이 실행되지 않던 원인이다. 고전 `NSStatusItem`을 직접 만들면 그 경로가 없다. `behavior = []`는 새 아이콘의 기본값과 같지만, 나중에 제거 허용이 붙으면 같은 버그가 되살아나므로 코드와 테스트로 못 박아 둔다.
 
 ---
 

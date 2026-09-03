@@ -380,14 +380,38 @@ struct ElementFieldBindingTests {
 
 @Suite("메뉴바 아이콘")
 struct MenuBarBehaviorTests {
-    @Test("상태 아이콘은 제거 불가로 둔다 — 제거를 허용하면 실행 직후 앱이 종료된다")
+    @Test("SwiftUI MenuBarExtra로 돌아가지 않는다 — 그 아이콘은 실행 직후 앱을 종료시킨다")
+    func doesNotUseMenuBarExtra() throws {
+        // 실측(macOS 26.5): `MenuBarExtra`가 만드는 상태 아이콘은 `terminateOnRemoval`이 켜져 있어
+        // 시스템이 "숨김"을 요청하면 `-[NSApplication terminate:]`가 불린다 —
+        // `MenuBarController` 주석 참고. 이 회귀는 앱을 통째로 못 쓰게 만들므로 소스로 막는다.
+        let app = try String(
+            contentsOf: sourceFile("DiskTidyApp.swift"), encoding: .utf8
+        )
+        // 주석은 이 버그를 설명하느라 `MenuBarExtra`를 언급한다. 코드 줄만 본다.
+        let code = app
+            .split(separator: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+
+        #expect(!code.contains("MenuBarExtra"))
+        #expect(code.contains("MenuBarInstaller"))
+    }
+
+    @Test("상태 아이콘에 제거 허용·제거 시 종료를 붙이지 않는다")
     @MainActor
-    func statusItemStaysNonRemovable() {
-        // 실측(macOS 26.5): `terminateOnRemoval`이 켜진 상태 아이콘은 ControlCenter가 보내는
-        // `NSStatusItemChangeVisibilityAction visible=0`을 "사용자가 제거함"으로 받아
-        // `-[NSApplication terminate:]`를 부른다 — `MenuBarController` 주석 참고.
+    func statusItemKeepsDefaultBehavior() {
         #expect(MenuBarController.behavior.isEmpty)
         #expect(!MenuBarController.behavior.contains(.terminationOnRemoval))
         #expect(!MenuBarController.behavior.contains(.removalAllowed))
+    }
+
+    /// 테스트 파일 위치에서 소스 경로를 만든다. 번들 리소스로 넣지 않아도 읽을 수 있다.
+    private func sourceFile(_ name: String) -> URL {
+        URL(fileURLWithPath: #filePath)          // Tests/DiskTidyTests/StoreAndStateTests.swift
+            .deletingLastPathComponent()          // Tests/DiskTidyTests
+            .deletingLastPathComponent()          // Tests
+            .deletingLastPathComponent()          // 저장소 루트
+            .appendingPathComponent("Sources/DiskTidy/\(name)")
     }
 }
