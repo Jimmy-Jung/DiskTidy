@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.3** (2026-09-03)
+- Latest version: **1.5.4** (2026-09-03)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,22 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.4
+
+**Fixed: opening the AI assistant squeezed the sidebar.** Since the wider list header landed in
+1.5.2, opening the chat panel made `NavigationSplitView` take the missing width **out of the
+sidebar** — it shrank to 164pt and item names were clipped on the left. (Only the SSD-usage tab was
+unaffected, because it has no list header.)
+
+- While the chat panel is open the window's minimum width rises to sidebar 200 + content 660 +
+  panel 380 = 1240. Widening the window once beats losing the sidebar →
+  [6. Window behavior](#6-window-behavior)
+- The sidebar width is pinned with min·ideal·max together; a single value shrinks under pressure.
+- The list header can now shrink: the search field goes first, then the title truncates (full title
+  in a tooltip). The selection summary (`59 items · 179.8 MB`) survives longest — it answers the
+  screen's first question.
+- The chat panel's minimum width went to 380; at 300 its "새 대화" button was clipped.
 
 ### What changed in 1.5.3
 
@@ -422,6 +438,8 @@ Messages you type stay verbatim, so a `*` you wrote is not eaten as formatting. 
 With no Dock icon (`LSUIElement`), a window that slips behind another app is unreachable. So opening the window handles activation, front ordering and Space placement together, and **always on top** is on by default (turn it off under Settings → Window).
 
 Activation alone measurably is not enough: when another app is full-screen it owns the active Space and our window stays on a different one — `lsappinfo` reports DiskTidy as frontmost and `CGWindowList` puts the window inside screen bounds, yet a screenshot captures only the full-screen editor. So the window level goes to `.floating` with `canJoinAllSpaces` and `fullScreenAuxiliary` (or `.normal` + `moveToActiveSpace` when always-on-top is off). Right after launch SwiftUI may not have created the window yet, so the presenter retries briefly until it exists.
+
+**Opening the AI assistant widens the window to at least 1240pt** *(1.5.4)*. That is sidebar 200 + content 660 + panel 380. Without that floor `NavigationSplitView` takes the missing width from the sidebar, which shrinks even when pinned with `min·ideal·max` (measured down to 164pt). Widening the window once was judged better than losing the sidebar.
 
 **Closing the window leaves the app resident in the menu bar** *(1.5.3)*. With the default behavior SwiftUI quits the app when its last window closes, and because this app has no Dock icon the menu-bar icon goes with it — leaving no way back in. Quit from the menu bar's "종료" row instead.
 
