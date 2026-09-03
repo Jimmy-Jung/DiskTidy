@@ -9,6 +9,9 @@ private struct SidebarItem: Identifiable, Hashable {
 
 private let sidebarItems: [SidebarItem] = [
     SidebarItem(id: 0, title: "SSD 용량", systemImage: "internaldrive"),
+    // 임시파일을 캐시데이터 위에 둔다. 에이전트 작업물이 tmp에 GB 단위로 쌓여 이 탭이 가장 자주 쓰인다.
+    // id는 표시 순서와 무관한 고정값이라 그대로 둔다.
+    SidebarItem(id: 8, title: "임시파일", systemImage: "clock.badge.xmark"),
     SidebarItem(id: 1, title: "캐시데이터", systemImage: "trash.circle"),
     SidebarItem(id: 2, title: "시뮬레이터", systemImage: "iphone"),
     SidebarItem(id: 3, title: "프로젝트 캐시", systemImage: "folder.badge.gearshape"),
@@ -16,7 +19,6 @@ private let sidebarItems: [SidebarItem] = [
     SidebarItem(id: 5, title: "대용량 파일", systemImage: "doc.badge.arrow.up"),
     SidebarItem(id: 6, title: "Android 캐시", systemImage: "shippingbox"),
     SidebarItem(id: 7, title: "Android 에뮬레이터", systemImage: "display"),
-    SidebarItem(id: 8, title: "임시파일", systemImage: "clock.badge.xmark"),
     SidebarItem(id: 9, title: "개발 데몬", systemImage: "memorychip"),
     // 설정 탭 id(10)는 챗봇 패널이 참조하는 고정값이라 새 탭은 그 뒤 번호를 쓴다.
     SidebarItem(id: 11, title: "패키지 캐시", systemImage: "cube.box"),
