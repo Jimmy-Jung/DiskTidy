@@ -9,6 +9,18 @@ final class CleanableListViewModel: ObservableObject {
     @Published var isDeleting = false
     @Published var errorMessage: String?
 
+    /// 삭제 진행률. 수 GB 디렉터리는 한 건에 몇 초씩 걸려 진행 표시가 없으면 멈춘 것처럼 보인다.
+    @Published private(set) var deletionProgress: DeletionProgress?
+
+    struct DeletionProgress: Equatable {
+        var done: Int
+        var total: Int
+    }
+
+    /// 진행 중인 삭제. 취소는 **아직 시작하지 않은 항목**만 건너뛴다 — 이미 휴지통으로 간 항목은
+    /// 그대로 남는다(사용자가 휴지통에서 되돌릴 수 있다).
+    private var deletionTask: Task<Void, Never>?
+
     /// 사용자가 고른 스캔 루트. 루트가 필요 없는 스캐너(캐시·Xcode 등)는 비워 둔다.
     /// 루트 기반 탭은 `RootFolderViewModel.roots` 변화를 여기에 반영한다.
     @Published var roots: [URL] = []
@@ -111,44 +123,73 @@ final class CleanableListViewModel: ObservableObject {
 
         isDeleting = true
         errorMessage = nil
+        deletionProgress = DeletionProgress(done: 0, total: targets.count)
 
         let companionPaths = self.companionPaths
         let trash = self.trash
-        Task {
-            // 수 GB 디렉터리를 메인 스레드에서 지우면 UI가 멈춘다.
-            let failedIDs = await Task.detached(priority: .userInitiated) { () -> Set<UUID> in
-                var failed: Set<UUID> = []
-                for item in targets {
-                    guard trash(item.path) else {
-                        failed.insert(item.id)
-                        continue
-                    }
-                    // 부수 파일(AVD의 .ini 등)은 본체가 이미 지워진 뒤라 실패해도
-                    // 용량에는 영향이 없다. TrashService가 로그를 남기므로 여기선 넘긴다.
+        deletionTask = Task {
+            var failedIDs: Set<UUID> = []
+            var deletedIDs: Set<UUID> = []
+
+            for item in targets {
+                // 취소는 항목 사이에서만 본다. 한 항목의 휴지통 이동은 쪼갤 수 없다.
+                if Task.isCancelled { break }
+                // 수 GB 디렉터리를 메인 스레드에서 지우면 UI가 멈춘다.
+                let moved = await Task.detached(priority: .userInitiated) { () -> Bool in
+                    guard trash(item.path) else { return false }
+                    // 부수 파일(AVD의 .ini 등)은 본체가 이미 지워진 뒤라 실패해도 용량에는
+                    // 영향이 없다. TrashService가 로그를 남기므로 여기선 넘긴다.
                     for companion in companionPaths(item)
                         where FileManager.default.fileExists(atPath: companion.path) {
                         _ = trash(companion)
                     }
-                }
-                return failed
-            }.value
+                    return true
+                }.value
+
+                if moved { deletedIDs.insert(item.id) } else { failedIDs.insert(item.id) }
+                self.deletionProgress = DeletionProgress(
+                    done: deletedIDs.count + failedIDs.count, total: targets.count
+                )
+            }
 
             // 삭제 중에도 체크박스는 열려 있다. 현재 선택 상태로 지우면 삭제가 시작된 뒤
             // 새로 체크된 항목이 휴지통에 가지도 않은 채 목록에서만 사라진다.
-            // 반드시 시작 시점에 스냅샷한 대상 ID로만 제거한다.
-            let deletedIDs = Set(targets.map(\.id)).subtracting(failedIDs)
+            // 반드시 실제로 옮긴 ID로만 제거한다.
             self.items.removeAll { deletedIDs.contains($0.id) }
+            let skipped = targets.count - deletedIDs.count - failedIDs.count
+            self.errorMessage = Self.deletionMessage(
+                failedCount: failedIDs.count, skippedCount: skipped
+            )
+            self.deletionProgress = nil
             self.isDeleting = false
-            self.errorMessage = Self.failureMessage(failedCount: failedIDs.count)
+            self.deletionTask = nil
         }
     }
 
-    func selectAll(_ isSelected: Bool) {
-        for index in items.indices { items[index].isSelected = isSelected }
+    /// 남은 항목의 삭제를 그만둔다. 이미 옮긴 항목은 되돌리지 않는다.
+    func cancelDeletion() {
+        deletionTask?.cancel()
+    }
+
+    /// `ids`를 주면 그 항목만 바꾼다. 검색으로 걸러 본 상태에서 머리글 체크박스를 누르면
+    /// 보이지 않는 항목까지 선택되면 안 된다.
+    func selectAll(_ isSelected: Bool, ids: Set<UUID>? = nil) {
+        for index in items.indices where ids?.contains(items[index].id) ?? true {
+            items[index].isSelected = isSelected
+        }
     }
 
     nonisolated static func failureMessage(failedCount: Int) -> String? {
         guard failedCount > 0 else { return nil }
         return "\(failedCount)개 항목을 휴지통으로 옮기지 못했습니다 (권한 부족 또는 사용 중인 파일). 자세한 내용은 Console.app에서 DiskTidy 로그를 확인하세요."
+    }
+
+    /// 실패와 취소를 한 배너에 담는다. 취소는 오류가 아니므로 실패가 없으면 사실만 남긴다.
+    nonisolated static func deletionMessage(failedCount: Int, skippedCount: Int) -> String? {
+        let failure = failureMessage(failedCount: failedCount)
+        guard skippedCount > 0 else { return failure }
+        let cancelled = "취소했습니다 — \(skippedCount)개 항목은 그대로 두었습니다."
+        guard let failure else { return cancelled }
+        return failure + " " + cancelled
     }
 }

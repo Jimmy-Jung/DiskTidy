@@ -221,8 +221,16 @@ final class MemoryViewModel: ObservableObject {
         }
     }
 
-    func selectAll(_ isSelected: Bool) {
-        for index in processes.indices { processes[index].isSelected = isSelected }
+    /// 전체 선택은 **종료 가능한 항목만** 고른다. 표시만 하는 프로세스까지 체크하면
+    /// "선택 8개 · 종료 가능 0개"처럼 버튼이 왜 잠겼는지 알 수 없는 상태가 된다.
+    /// 해제는 모든 항목에 적용한다 (정책이 바뀌어 체크가 남은 행도 풀려야 한다).
+    /// `ids`를 주면 그 프로세스만 바꾼다 — 검색으로 걸러 본 상태에서 안 보이는 데몬까지 선택되면 안 된다.
+    func selectAll(_ isSelected: Bool, ids: Set<Int32>? = nil) {
+        for index in processes.indices
+        where (ids?.contains(processes[index].id) ?? true)
+            && (processes[index].isTerminable || !isSelected) {
+            processes[index].isSelected = isSelected
+        }
     }
 
     // MARK: - 종료

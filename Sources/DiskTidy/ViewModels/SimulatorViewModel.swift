@@ -119,8 +119,11 @@ final class SimulatorViewModel: ObservableObject {
         run(action: erase, verb: "초기화")
     }
 
-    func selectAll(_ isSelected: Bool) {
-        for index in items.indices { items[index].isSelected = isSelected }
+    /// `ids`를 주면 그 항목만 바꾼다 — 검색으로 걸러 본 상태에서 안 보이는 기기까지 선택되면 안 된다.
+    func selectAll(_ isSelected: Bool, ids: Set<String>? = nil) {
+        for index in items.indices where ids?.contains(items[index].id) ?? true {
+            items[index].isSelected = isSelected
+        }
     }
 
     /// 부팅된 시뮬레이터를 모두 종료한다. 확인 다이얼로그를 거친 뒤에만 호출한다.

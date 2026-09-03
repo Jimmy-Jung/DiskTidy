@@ -151,6 +151,21 @@ struct CleanableListScanTests {
         viewModel.selectAll(false)
         #expect(viewModel.selectedBytes == 0)
     }
+
+    @Test("ids를 주면 그 항목만 전체 선택한다 — 검색으로 걸러 본 상태의 계약")
+    func selectAllHonoursIDScope() {
+        let viewModel = CleanableListViewModel(scan: { [] })
+        viewModel.items = [item("a", bytes: 100), item("b", bytes: 250)]
+        let visible = Set([viewModel.items[0].id])
+
+        viewModel.selectAll(true, ids: visible)
+        #expect(viewModel.selectedItems.map(\.name) == ["a"])
+
+        // 해제도 같은 범위만 건드린다. 보이지 않는 항목의 선택은 그대로 남는다.
+        viewModel.selectAll(true)
+        viewModel.selectAll(false, ids: visible)
+        #expect(viewModel.selectedItems.map(\.name) == ["b"])
+    }
 }
 
 // MARK: - CleanableListViewModel 삭제
@@ -183,6 +198,26 @@ struct CleanableListDeletionTests {
         #expect(trash.trashedNames == ["a", "c"])
         #expect(viewModel.items.map(\.name) == ["b"])
         #expect(viewModel.errorMessage == nil)
+    }
+
+    @Test("취소하면 시작하지 않은 항목은 그대로 두고 진행률을 지운다")
+    func cancelSkipsRemainingItems() async {
+        let trash = TrashRecorder()
+        let viewModel = CleanableListViewModel(scan: { [] }, trash: { trash.trash($0) })
+        viewModel.items = [
+            item("a", selected: true), item("b", selected: true), item("c", selected: true),
+        ]
+
+        viewModel.deleteSelected()
+        // 같은 메인 액터 턴에서 취소한다. 삭제 Task의 본문은 이 턴이 끝나야 시작하므로
+        // 첫 항목조차 손대기 전에 취소가 확정된다 — 시간에 기대지 않는 유일한 지점이다.
+        viewModel.cancelDeletion()
+
+        #expect(await waitUntil { !viewModel.isDeleting })
+        #expect(trash.trashedNames.isEmpty)
+        #expect(viewModel.items.map(\.name) == ["a", "b", "c"])
+        #expect(viewModel.deletionProgress == nil)
+        #expect(viewModel.errorMessage?.contains("취소") == true)
     }
 
     @Test("휴지통 이동에 실패한 항목은 목록에 남기고 알린다")

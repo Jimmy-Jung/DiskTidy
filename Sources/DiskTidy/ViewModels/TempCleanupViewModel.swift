@@ -16,6 +16,17 @@ final class TempCleanupViewModel: ObservableObject {
     /// 새로 읽은 여유 용량을 따로 보여 준다.
     @Published private(set) var deletionSummary: String?
 
+    /// 삭제 진행률. 항목 하나가 수 GB일 수 있어 진행 표시가 없으면 멈춘 것처럼 보인다.
+    @Published private(set) var deletionProgress: DeletionProgress?
+
+    struct DeletionProgress: Equatable {
+        var done: Int
+        var total: Int
+    }
+
+    /// 진행 중인 삭제. 취소는 **아직 시작하지 않은 항목**만 건너뛴다 — 이미 지운 항목은 돌아오지 않는다.
+    private var deletionTask: Task<Void, Never>?
+
     /// 기존 `CleanableListViewModel`과 같은 방식으로 실제 수단만 주입 가능하게 둔다.
     /// 되돌릴 수 없는 삭제라 테스트가 진짜 파일시스템을 건드리면 안 되고,
     /// 스캔 실패·삭제 중 선택 변경 같은 상태 전이는 대역 없이는 고정할 수 없다.
@@ -91,14 +102,24 @@ final class TempCleanupViewModel: ObservableObject {
         isDeleting = true
         errorMessage = nil
         deletionSummary = nil
+        deletionProgress = DeletionProgress(done: 0, total: targets.count)
 
         let delete = self.delete
         let loadRecoveries = self.loadRecoveries
         let availableBytes = self.availableBytes
-        Task {
-            let results = await Task.detached(priority: .userInitiated) {
-                targets.map { (id: $0.id, outcome: delete($0)) }
-            }.value
+        deletionTask = Task {
+            var results: [(id: TempCandidate.ID, outcome: PermanentDeleter.Outcome)] = []
+
+            for target in targets {
+                // 취소는 항목 사이에서만 본다. 한 항목의 격리·삭제는 쪼갤 수 없다.
+                if Task.isCancelled { break }
+                let outcome = await Task.detached(priority: .userInitiated) { delete(target) }.value
+                results.append((id: target.id, outcome: outcome))
+                self.deletionProgress = DeletionProgress(
+                    done: results.count, total: targets.count
+                )
+            }
+
             // `StorageInfo`는 볼륨을 조회한다. 네트워크 볼륨이면 메인 스레드가 멈추고,
             // 삭제 직후라 사용자는 삭제 탓으로 오해한다.
             let (recoveries, available) = await Task.detached(priority: .userInitiated) {
@@ -128,14 +149,26 @@ final class TempCleanupViewModel: ObservableObject {
                 deletedCount: deletedIDs.count,
                 deletedBytes: targets.filter { deletedIDs.contains($0.id) }
                     .reduce(0) { $0 + $1.sizeBytes },
-                availableBytes: available
+                availableBytes: available,
+                skippedCount: targets.count - results.count
             )
+            self.deletionProgress = nil
             self.isDeleting = false
+            self.deletionTask = nil
         }
     }
 
-    func selectAll(_ isSelected: Bool) {
-        for index in items.indices where items[index].isDeletable || !isSelected {
+    /// 남은 항목의 삭제를 그만둔다. 이미 지운 항목은 돌아오지 않는다.
+    func cancelDeletion() {
+        deletionTask?.cancel()
+    }
+
+    /// `ids`를 주면 그 항목만 바꾼다. 검색으로 걸러 본 상태에서 머리글 체크박스를 누르면
+    /// 보이지 않는 항목까지 선택되면 안 된다.
+    func selectAll(_ isSelected: Bool, ids: Set<TempCandidate.ID>? = nil) {
+        for index in items.indices
+        where (ids?.contains(items[index].id) ?? true)
+            && (items[index].isDeletable || !isSelected) {
             items[index].isSelected = isSelected
         }
     }
@@ -231,16 +264,22 @@ final class TempCleanupViewModel: ObservableObject {
     }
 
     nonisolated static func summary(
-        deletedCount: Int, deletedBytes: Int64, availableBytes: Int64?
+        deletedCount: Int, deletedBytes: Int64, availableBytes: Int64?, skippedCount: Int = 0
     ) -> String? {
-        guard deletedCount > 0 else { return nil }
+        guard deletedCount > 0 else {
+            // 하나도 못 지웠는데 취소만 눌린 경우에도 무슨 일이 있었는지는 남겨야 한다.
+            return skippedCount > 0 ? "취소했습니다 — \(skippedCount)개 항목은 그대로 두었습니다." : nil
+        }
         let deleted = ByteCountFormatter.string(fromByteCount: deletedBytes, countStyle: .file)
         let free = availableBytes.map {
             ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
         } ?? "확인 불가"
         // 회수량을 약속하지 않는다. APFS 스냅샷이나 열린 파일 때문에 반영이 늦을 수 있다.
+        let cancelled = skippedCount > 0
+            ? " 취소했습니다 — \(skippedCount)개 항목은 그대로 두었습니다."
+            : ""
         return "경로 \(deletedCount)개 삭제 (대상 합계 \(deleted)). 현재 여유 용량 \(free). "
-            + "APFS 스냅샷이나 열린 파일 때문에 여유 용량 반영이 늦어질 수 있습니다."
+            + "APFS 스냅샷이나 열린 파일 때문에 여유 용량 반영이 늦어질 수 있습니다." + cancelled
     }
 
     private nonisolated static func description(of refusal: PermanentDeleter.Refusal) -> String {

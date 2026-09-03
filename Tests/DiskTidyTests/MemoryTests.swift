@@ -826,6 +826,30 @@ struct MemoryViewModelTests {
         #expect(terminator.terminatedPIDs.isEmpty)
     }
 
+    @Test("전체 선택은 종료 가능한 항목만 고르고, 해제는 모든 항목을 푼다")
+    func selectAllPicksOnlyTerminable() async {
+        let daemon = makeProcess()
+        let workload = makeProcess(
+            identity: makeIdentity(pid: 99_992, path: "/opt/homebrew/bin/node"),
+            arguments: ["node", "/Users/tester/mcp/server.js"],
+            kind: .activeWorkload("MCP 서버")
+        )
+        let viewModel = makeViewModel(
+            scanner: ProcessScanRecorder(result: .success([daemon, workload]))
+        )
+
+        viewModel.refreshProcesses()
+        #expect(await waitUntil { viewModel.processes.count == 2 })
+
+        viewModel.selectAll(true)
+        // 머리글 체크박스가 "전체 선택" 상태로 보이려면 선택 수와 종료 가능 수가 같아야 한다.
+        #expect(viewModel.selectedCount == 1)
+        #expect(viewModel.terminableSelection.count == 1)
+
+        viewModel.selectAll(false)
+        #expect(viewModel.selectedCount == 0)
+    }
+
     @Test("스왑 파일 안내는 임계치를 넘을 때만 띄우고, 측정 실패에는 띄우지 않는다")
     func showsSwapNoticeOnlyAboveThreshold() async {
         let failing = MemoryViewModel(

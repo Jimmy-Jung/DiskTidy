@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 메모리·스왑 지표와 개발 데몬 목록을 한 탭에 둔다.
@@ -8,17 +9,63 @@ struct MemoryTabView: View {
     // 창 수명 동안 유지되는 인스턴스를 주입받는다 — `TabViewModels` 참고.
     @ObservedObject var viewModel: MemoryViewModel
     @State private var isConfirmingTermination = false
+    @State private var searchText = ""
+    /// 기본은 메모리 내림차순 — 스캐너와 같은 순서다.
+    @State private var sort = ColumnSort<SortKey>(key: .memory, isAscending: false)
+
+    enum SortKey { case name, memory }
 
     private var terminableCount: Int { viewModel.terminableSelection.count }
 
+    /// 검색으로 걸러 정렬한 목록. 선택 바인딩은 여전히 `viewModel.processes`를 id로 찾는다.
+    private var visibleProcesses: [RunningProcess] {
+        let filtered = viewModel.processes.filter { process in
+            searchText.isEmpty
+                || process.displayName.localizedStandardContains(searchText)
+                || process.kind.label.localizedStandardContains(searchText)
+                || process.identity.executablePath.localizedStandardContains(searchText)
+        }
+        return filtered.sorted(ascending: sort.isAscending) { lhs, rhs in
+            switch sort.key {
+            case .name:
+                return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+            case .memory:
+                return lhs.residentBytes < rhs.residentBytes
+            }
+        }
+    }
+
+    /// 전체 선택의 분모. 종료할 수 없는 행은 체크되지 않으므로 여기서도 뺀다.
+    private var terminableTotal: Int { visibleProcesses.filter(\.isTerminable).count }
+
+    /// 상단 요약. 이 탭의 단위는 용량이 아니라 개수·RSS다.
+    private var summary: String {
+        guard viewModel.selectedCount > 0 else {
+            let bytes = viewModel.processes.reduce(0) { $0 + $1.residentBytes }
+            return "\(viewModel.processes.count)개 · "
+                + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .memory)
+        }
+        return "선택 \(viewModel.selectedCount)개 · 종료 가능 \(terminableCount)개"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("개발 데몬 정리").font(.title2.bold())
-                Spacer()
-                if viewModel.isWorking { ProgressView().controlSize(.small) }
-                Button("새로고침") { viewModel.refreshAll() }
-                    .disabled(viewModel.isWorking)
+            TabHeader(
+                title: "개발 데몬 정리",
+                isWorking: viewModel.isWorking,
+                summary: summary,
+                search: $searchText,
+                refresh: { viewModel.refreshAll() }
+            ) {
+                // 이 버튼은 확인 상태만 연다. 실제 시그널은 다이얼로그의 확인 액션에서만 보낸다.
+                ListActionButton(
+                    title: "데몬 종료",
+                    systemImage: "stop.circle",
+                    isEnabled: terminableCount > 0 && !viewModel.isWorking
+                ) {
+                    viewModel.isConfirming = true
+                    isConfirmingTermination = true
+                }
             }
 
             MemoryMetricsSection(state: viewModel.memory)
@@ -38,28 +85,38 @@ struct MemoryTabView: View {
                 ErrorBanner(message: message) { viewModel.errorMessage = nil }
             }
 
+            // 빈 목록에도 `List`를 그리면 안내 문구 아래로 빈 사각형이 화면을 다 먹는다 —
+            // `CleanableListView` 주석 참고.
             if viewModel.processes.isEmpty && !viewModel.isWorking {
                 Text("표시할 개발 프로세스가 없습니다.").foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                HeaderedList(
+                    selection: SelectionState(
+                        selected: visibleProcesses.filter { $0.isSelected && $0.isTerminable }.count,
+                        selectable: terminableTotal
+                    ),
+                    isEnabled: terminableTotal > 0,
+                    onToggle: { select($0) }
+                ) {
+                    SortableColumnLabel(
+                        title: "프로세스", isActive: sort.key == .name, isAscending: sort.isAscending
+                    ) { sort.select(.name, ascendingFirst: true) }
+                    Spacer(minLength: 8)
+                    SortableColumnLabel(
+                        title: "메모리 · 활동",
+                        isActive: sort.key == .memory,
+                        isAscending: sort.isAscending
+                    ) { sort.select(.memory, ascendingFirst: false) }
+                        .frame(width: ListColumn.metric, alignment: .trailing)
+                    Spacer().frame(width: ListColumn.info)
+                } rows: {
+                    ProcessRows(viewModel: viewModel, processes: visibleProcesses)
+                }
             }
-
-            ProcessList(viewModel: viewModel)
 
             if let summary = viewModel.terminationSummary {
                 Text(summary).font(.caption).foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Button("전체 선택") { viewModel.selectAll(true) }
-                Button("전체 해제") { viewModel.selectAll(false) }
-                Spacer()
-                Text("선택: \(viewModel.selectedCount)개 (종료 가능 \(terminableCount)개)")
-                    .foregroundStyle(.secondary)
-                // 이 버튼은 확인 상태만 연다. 실제 시그널은 다이얼로그의 확인 액션에서만 보낸다.
-                Button("데몬 종료", role: .destructive) {
-                    viewModel.isConfirming = true
-                    isConfirmingTermination = true
-                }
-                .disabled(terminableCount == 0 || viewModel.isWorking)
             }
         }
         .padding()
@@ -86,6 +143,11 @@ struct MemoryTabView: View {
         .screenContext("개발 데몬 정리") { [viewModel] in
             ScreenContextBuilder.memory(viewModel: viewModel)
         }
+    }
+
+    /// 검색으로 걸러 본 상태에서는 **보이는 프로세스만** 선택·해제한다.
+    private func select(_ isSelected: Bool) {
+        viewModel.selectAll(isSelected, ids: Set(visibleProcesses.map(\.id)))
     }
 
     /// 확인창에 대상 identity 스냅샷을 그대로 보여 준다. 이름만 보이면 PID가 재사용된
@@ -203,8 +265,11 @@ private struct SwapSection: View {
 
 // MARK: - 프로세스 목록
 
-private struct ProcessList: View {
+/// 프로세스 행. `HeaderedList`의 `List` 안에 그대로 들어간다.
+private struct ProcessRows: View {
     @ObservedObject var viewModel: MemoryViewModel
+    /// 검색으로 걸러 정렬한 목록.
+    let processes: [RunningProcess]
 
     /// 행마다 `Date()`를 부르지 않는다. 목록은 5초마다 다시 그려지므로 그 시점 하나로 충분하다.
     private var now: Date { Date() }
@@ -219,59 +284,64 @@ private struct ProcessList: View {
     }
 
     var body: some View {
-        List {
-            // 인덱스 바인딩(`ForEach($processes)`)은 목록이 줄면 죽는다 — `Binding.field` 주석 참고.
-            ForEach(viewModel.processes) { process in
-                HStack {
-                    // 종료할 수 없는 항목에는 체크박스를 열지 않는다.
-                    Toggle(isOn: $viewModel.processes.field(\.isSelected, id: process.id, default: false)) {
-                        EmptyView()
-                    }
-                        .toggleStyle(.checkbox)
-                        .labelsHidden()
-                        .disabled(!process.isTerminable)
-
-                    VStack(alignment: .leading) {
-                        Text("\(process.displayName) · PID \(process.identity.pid)")
-                        Text("\(process.kind.label) · \(process.isTerminable ? "종료 가능" : "표시만")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        // 시작 시각·CPU·띄운 앱. "며칠째 떠 있는 데몬"과 "누가 띄웠나"가 종료 판단의 근거다.
-                        Text(process.detailLine(now: now))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing) {
-                        Text(process.residentString).monospacedDigit()
-                        activityBadge(process.activity)
-                    }
-                    ExplanationButton(
-                        subject: ExplanationSubject(
-                            // PID는 재시작하면 바뀐다. 이름과 분류로 캐시해야 같은 데몬을
-                            // 다시 물어보지 않는다.
-                            key: "process:\(process.kind.label):\(process.displayName)",
-                            title: process.displayName,
-                            subtitle: "PID \(process.identity.pid) · \(process.kind.label)",
-                            facts: [
-                                "항목: 실행 중인 프로세스 \(process.displayName)",
-                                "분류: \(process.kind.label)",
-                                "메모리(RSS 근사치): \(process.residentString)",
-                                process.detailLine(now: now),
-                                "활동: \(process.activity?.statusString(now: now) ?? "관찰 전")",
-                                process.isTerminable
-                                    ? "이 화면의 정리 방식: SIGTERM·SIGKILL로 종료 (되돌릴 수 없음, 도구가 다시 띄울 수 있음)"
-                                    : "이 화면에서는 종료할 수 없고 표시만 한다",
-                            ],
-                            // 이름이 곧 정체인 데몬은 앱이 안다. AI에게 물을 이유가 없다.
-                            knownDescription: KnownItemCatalog.description(
-                                forProcessNamed: process.displayName
-                            )
-                        ),
-                        screenTitle: "개발 데몬"
-                    )
+        // 인덱스 바인딩(`ForEach($processes)`)은 목록이 줄면 죽는다 — `Binding.field` 주석 참고.
+        ForEach(viewModel.processes) { process in
+            HStack(spacing: 8) {
+                // 종료할 수 없는 항목에는 체크박스를 열지 않는다.
+                Toggle(isOn: $viewModel.processes.field(\.isSelected, id: process.id, default: false)) {
+                    EmptyView()
                 }
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
+                    .disabled(!process.isTerminable)
+                    .frame(width: ListColumn.checkbox, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(process.displayName) · PID \(process.identity.pid)")
+                    Text("\(process.kind.label) · \(process.isTerminable ? "종료 가능" : "표시만")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    // 시작 시각·CPU·띄운 앱. "며칠째 떠 있는 데몬"과 "누가 띄웠나"가 종료 판단의 근거다.
+                    Text(process.detailLine(now: now))
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                        .help(process.identity.executablePath)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(process.residentString).monospacedDigit()
+                    activityBadge(process.activity)
+                }
+                .frame(width: ListColumn.metric, alignment: .trailing)
+                ExplanationButton(
+                    subject: ExplanationSubject(
+                        // PID는 재시작하면 바뀐다. 이름과 분류로 캐시해야 같은 데몬을
+                        // 다시 물어보지 않는다.
+                        key: "process:\(process.kind.label):\(process.displayName)",
+                        title: process.displayName,
+                        subtitle: "PID \(process.identity.pid) · \(process.kind.label)",
+                        facts: [
+                            "항목: 실행 중인 프로세스 \(process.displayName)",
+                            "분류: \(process.kind.label)",
+                            "메모리(RSS 근사치): \(process.residentString)",
+                            process.detailLine(now: now),
+                            "활동: \(process.activity?.statusString(now: now) ?? "관찰 전")",
+                            process.isTerminable
+                                ? "이 화면의 정리 방식: SIGTERM·SIGKILL로 종료 (되돌릴 수 없음, 도구가 다시 띄울 수 있음)"
+                                : "이 화면에서는 종료할 수 없고 표시만 한다",
+                        ],
+                        // 이름이 곧 정체인 데몬은 앱이 안다. AI에게 물을 이유가 없다.
+                        knownDescription: KnownItemCatalog.description(
+                            forProcessNamed: process.displayName
+                        )
+                    ),
+                    screenTitle: "개발 데몬"
+                )
+                .frame(width: ListColumn.info, alignment: .trailing)
             }
+            .listRowAlignedWithHeader()
         }
     }
 }
