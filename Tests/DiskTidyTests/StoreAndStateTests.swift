@@ -375,3 +375,19 @@ struct ElementFieldBindingTests {
         #expect(store.rows == [Row(id: 1)])
     }
 }
+
+// MARK: - 메뉴바 아이콘
+
+@Suite("메뉴바 아이콘")
+struct MenuBarBehaviorTests {
+    @Test("상태 아이콘은 제거 불가로 둔다 — 제거를 허용하면 실행 직후 앱이 종료된다")
+    @MainActor
+    func statusItemStaysNonRemovable() {
+        // 실측(macOS 26.5): `terminateOnRemoval`이 켜진 상태 아이콘은 ControlCenter가 보내는
+        // `NSStatusItemChangeVisibilityAction visible=0`을 "사용자가 제거함"으로 받아
+        // `-[NSApplication terminate:]`를 부른다 — `MenuBarController` 주석 참고.
+        #expect(MenuBarController.behavior.isEmpty)
+        #expect(!MenuBarController.behavior.contains(.terminationOnRemoval))
+        #expect(!MenuBarController.behavior.contains(.removalAllowed))
+    }
+}

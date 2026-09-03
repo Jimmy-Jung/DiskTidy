@@ -8,6 +8,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WindowPresenter.present(alwaysOnTop: WindowPresenter.isAlwaysOnTopEnabled)
     }
 
+    /// 창을 닫아도 앱은 메뉴바에 남는다.
+    ///
+    /// 실측(macOS 26.5): 이 메서드를 구현하지 않으면 SwiftUI가 마지막 창이 닫힐 때 앱을 종료한다 —
+    /// `LSUIElement` 앱이라 Dock 아이콘도 없어서, 종료되면 메뉴바 아이콘까지 사라지고 다시 열
+    /// 방법이 없다. 종료는 메뉴바의 "종료"로만 한다.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     /// 이미 실행 중일 때 앱을 다시 열면(Finder 재실행 등) 여기로 온다.
     /// 기본 동작은 아무 일도 하지 않는 것이라, 사용자에게는 앱이 안 열린 것처럼 보인다.
     func applicationShouldHandleReopen(
@@ -33,6 +42,8 @@ struct DiskTidyApp: App {
     @StateObject private var update = UpdateViewModel()
     // 파일 접근 권한 상태. 실행 직후 한 번에 묻고 설정 탭이 보여 준다 — `FileAccess` 참고.
     @StateObject private var fileAccess = FileAccessViewModel()
+    // 메뉴바 아이콘은 SwiftUI `MenuBarExtra`가 아니라 AppKit이 만든다 — `MenuBarController` 참고.
+    @State private var menuBar = MenuBarController()
 
     var body: some Scene {
         // `WindowGroup`은 메뉴바의 "앱 열기"를 누를 때마다 새 창을 만든다. 탭 ViewModel은
@@ -48,18 +59,11 @@ struct DiskTidyApp: App {
                 .environmentObject(explanations)
                 .environmentObject(update)
                 .environmentObject(fileAccess)
+                .modifier(MenuBarInstaller(controller: menuBar, storageMonitor: storageMonitor))
         }
         // 보기 메뉴에 챗봇 인스펙터 토글과 ⌃⌘I를 넣는다. 툴바 버튼만 두면
         // 키보드만 쓰는 사용자는 패널을 열 방법이 없다.
         // 사이드바는 고정이라 `SidebarCommands()`는 넣지 않는다 — `ContentView` 참고.
         .commands { InspectorCommands() }
-
-        MenuBarExtra {
-            MenuBarContentView()
-                .environmentObject(storageMonitor)
-        } label: {
-            Text("💾 \(storageMonitor.percentUsedText)")
-        }
-        .menuBarExtraStyle(.window)
     }
 }

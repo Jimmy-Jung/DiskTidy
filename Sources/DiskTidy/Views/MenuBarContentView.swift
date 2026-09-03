@@ -2,8 +2,12 @@ import SwiftUI
 import AppKit
 
 struct MenuBarContentView: View {
+    /// 메인 창을 띄운다. `openWindow`는 SwiftUI 씬 안에서만 읽을 수 있고 이 뷰는 AppKit 팝오버
+    /// 안에서 살기 때문에 액션을 주입받는다 — `MenuBarController` 참고.
+    let openApp: () -> Void
+    let quit: () -> Void
+
     @EnvironmentObject private var storageMonitor: StorageMonitor
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -19,11 +23,11 @@ struct MenuBarContentView: View {
             Divider()
 
             MenuRow(title: "앱 열기") {
-                openWindow(id: "main")
+                openApp()
                 WindowPresenter.present(alwaysOnTop: WindowPresenter.isAlwaysOnTopEnabled)
             }
 
-            MenuRow(title: "종료") { NSApplication.shared.terminate(nil) }
+            MenuRow(title: "종료") { quit() }
         }
         .padding(12)
         .frame(width: 220)
