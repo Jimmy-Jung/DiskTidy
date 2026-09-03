@@ -99,6 +99,57 @@ struct AppReleaseParsingTests {
     }
 }
 
+// MARK: - 요청 한도
+
+@Suite("GitHub 요청 한도")
+struct RateLimitTests {
+    private func response(status: Int, headers: [String: String]) throws -> HTTPURLResponse {
+        try #require(HTTPURLResponse(
+            url: UpdateChecker.latestReleaseURL,
+            statusCode: status,
+            httpVersion: "HTTP/2",
+            headerFields: headers
+        ))
+    }
+
+    @Test("남은 횟수가 0인 403은 리셋 시각을 담은 한도 초과로 읽는다")
+    func readsResetTime() throws {
+        let http = try response(status: 403, headers: [
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": "1788429685",
+        ])
+        #expect(
+            UpdateChecker.rateLimitError(http)
+                == .rateLimited(until: Date(timeIntervalSince1970: 1_788_429_685))
+        )
+    }
+
+    @Test("리셋 헤더가 없어도 한도 초과로 알린다")
+    func toleratesMissingReset() throws {
+        let http = try response(status: 429, headers: ["x-ratelimit-remaining": "0"])
+        #expect(UpdateChecker.rateLimitError(http) == .rateLimited(until: nil))
+    }
+
+    @Test("남은 횟수가 있는 403은 한도가 아니라 권한 문제다")
+    func ignoresOtherForbidden() throws {
+        let http = try response(status: 403, headers: ["x-ratelimit-remaining": "12"])
+        #expect(UpdateChecker.rateLimitError(http) == nil)
+    }
+
+    @Test("성공 응답은 한도로 읽지 않는다")
+    func ignoresSuccess() throws {
+        let http = try response(status: 200, headers: ["x-ratelimit-remaining": "0"])
+        #expect(UpdateChecker.rateLimitError(http) == nil)
+    }
+
+    @Test("안내에 리셋 시각이 들어간다")
+    func messageNamesResetTime() throws {
+        let reset = Date(timeIntervalSince1970: 1_788_429_685)
+        let message = try #require(UpdateError.rateLimited(until: reset).errorDescription)
+        #expect(message.contains(reset.formatted(date: .omitted, time: .shortened)))
+    }
+}
+
 // MARK: - 체크섬
 
 @Suite("업데이트 체크섬")
