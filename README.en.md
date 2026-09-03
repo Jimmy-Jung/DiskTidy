@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.2** (2026-09-03)
+- Latest version: **1.5.3** (2026-09-03)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,24 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.3
+
+**Fixed: the app quit ~0.5 s after launch.** Every version up to 1.5.2 is affected, and it
+reproduces on macOS 26 whenever the menu-bar icon is hidden — the process disappears before either
+the window or the menu-bar icon becomes usable.
+
+The cause was the menu-bar icon itself (confirmed under lldb). The status item SwiftUI's
+`MenuBarExtra` creates has `terminateOnRemoval` set, and ControlCenter remembers the visibility of
+auto-assigned status-item slots. If that slot is remembered as hidden, a "hide" action is delivered
+at launch and AppKit reads it as **the user removing the item**, so it terminates the app
+(`-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`).
+
+- The menu-bar icon is now a plain AppKit `NSStatusItem` marked non-removable. No removal path, no
+  termination path → [6. Window behavior](#6-window-behavior)
+- Closing the window leaves the app resident in the menu bar. Previously closing the last window
+  quit the app, taking the menu-bar icon with it. Quit from the menu bar's "종료" row.
+- The in-app updater's automatic relaunch died the same way, so that is fixed too.
 
 ### What changed in 1.5.2
 
@@ -399,6 +417,10 @@ With no Dock icon (`LSUIElement`), a window that slips behind another app is unr
 
 Activation alone measurably is not enough: when another app is full-screen it owns the active Space and our window stays on a different one — `lsappinfo` reports DiskTidy as frontmost and `CGWindowList` puts the window inside screen bounds, yet a screenshot captures only the full-screen editor. So the window level goes to `.floating` with `canJoinAllSpaces` and `fullScreenAuxiliary` (or `.normal` + `moveToActiveSpace` when always-on-top is off). Right after launch SwiftUI may not have created the window yet, so the presenter retries briefly until it exists.
 
+**Closing the window leaves the app resident in the menu bar** *(1.5.3)*. With the default behavior SwiftUI quits the app when its last window closes, and because this app has no Dock icon the menu-bar icon goes with it — leaving no way back in. Quit from the menu bar's "종료" row instead.
+
+**The menu-bar icon is a plain AppKit `NSStatusItem`, not SwiftUI's `MenuBarExtra`** *(1.5.3)*. The status item `MenuBarExtra` creates carries "terminate the app when removed" (`terminateOnRemoval`), so if ControlCenter remembers that icon slot as hidden the app dies the moment it launches — that was the launch failure in 1.5.2 and earlier. Creating the item directly and marking it non-removable (`behavior = []`) removes that path. The trade-off: users cannot drag the icon out of the menu bar either.
+
 ---
 
 ## 7. Source layout
@@ -451,6 +473,7 @@ DiskTidy/
     Views/                 # ContentView (fixed sidebar + AI inspector toggle) + per-screen tabs +
                            #   shared components (ListChrome: header bar, column header,
                            #   tri-state checkbox, sorting, share bars;
+                           #   MenuBarController: the menu-bar icon;
                            #   CleanableListView, RootFolderPicker, ErrorBanner,
                            #   WindowPresenter)
                            #   + AI (SettingsTabView, ChatPanelView, ChatMarkdownStyle,

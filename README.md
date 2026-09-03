@@ -1,7 +1,7 @@
 # DiskTidy
 
 - 만든이: JunyoungJung
-- 최신 버전: **1.5.2** (2026-09-03)
+- 최신 버전: **1.5.3** (2026-09-03)
 - 배포: DMG 직접 배포 · ad-hoc 서명(Apple 공증 없음)
 - 요구 사항: macOS 14 이상
 - 라이선스: [MIT](LICENSE) · [English](README.en.md) · [기여 안내](CONTRIBUTING.md)
@@ -24,6 +24,24 @@ macOS SSD 용량 정리 유틸리티다. 앱 캐시 · 시뮬레이터 · 빌드
 | 창이 다른 앱 뒤로 숨는 문제 | [6. 창 동작](#6-창-동작) |
 | 소스 어디에 무엇이 있나 | [7. 소스 구조](#7-소스-구조) |
 | 왜 이렇게 만들었나 | [8. 설계 메모](#8-설계-메모) |
+
+### 1.5.3에서 달라진 것
+
+**실행 직후 앱이 종료되는 문제를 고쳤다.** 1.5.2 이하 모든 버전이 영향을 받고, macOS 26에서
+메뉴바 아이콘이 숨겨져 있으면 재현된다 — 실행하면 0.5초 만에 프로세스가 사라져 창도 메뉴바
+아이콘도 보이지 않는다.
+
+원인은 메뉴바 아이콘이었다(lldb로 확인). SwiftUI `MenuBarExtra`가 만드는 상태 아이콘은
+`terminateOnRemoval`이 켜져 있는데, ControlCenter는 자동 배정 슬롯의 표시 여부를 기억한다.
+그 슬롯이 숨김으로 남아 있으면 실행 즉시 "숨김" 액션이 앱에 전달되고, AppKit은 그것을
+**사용자가 아이콘을 제거한 것**으로 읽어 앱을 종료한다
+(`-[NSSceneStatusItem scene:handleActions:]` → `-[NSApplication terminate:]`).
+
+- 메뉴바 아이콘을 AppKit `NSStatusItem`으로 직접 만들고 제거 불가로 둔다. 제거 경로가 없으면
+  종료 경로도 없다 → [6. 창 동작](#6-창-동작)
+- 창을 닫아도 앱이 메뉴바에 남는다. 이전에는 마지막 창을 닫는 순간 앱이 종료돼 메뉴바 아이콘까지
+  사라졌다. 종료는 메뉴바의 "종료"로 한다.
+- 인앱 업데이트 뒤 자동 재실행도 같은 경로로 죽었으므로 함께 해결된다.
 
 ### 1.5.2에서 달라진 것
 
@@ -402,6 +420,10 @@ Dock 아이콘이 없는 앱(`LSUIElement`)이라 창이 다른 앱 뒤로 숨�
 
 활성화만으로는 부족하다는 것을 실측으로 확인했다. 다른 앱이 전체 화면이면 그 앱이 Space를 차지하고 창은 다른 Space에 남는다 — `lsappinfo`는 DiskTidy가 최전면이라고 답하고 `CGWindowList`에도 창이 화면 좌표 안에 있다고 나오는데, 스크린샷에는 전체 화면 편집기만 찍힌다. 그래서 창 레벨을 `.floating`으로 올리고 `canJoinAllSpaces` · `fullScreenAuxiliary`를 함께 준다(항상 위 끄면 `.normal` + `moveToActiveSpace`). 실행 직후에는 SwiftUI가 아직 창을 만들지 않았을 수 있어, 창이 생길 때까지 짧은 간격으로 몇 번 더 시도한다.
 
+**창을 닫아도 앱은 메뉴바에 남는다** *(1.5.3)*. 기본 동작대로 두면 SwiftUI가 마지막 창이 닫힐 때 앱을 종료하는데, Dock 아이콘이 없는 앱이라 종료되면 메뉴바 아이콘까지 사라져 다시 열 방법이 없다. 종료는 메뉴바의 "종료"로만 한다.
+
+**메뉴바 아이콘은 SwiftUI `MenuBarExtra`가 아니라 AppKit `NSStatusItem`이다** *(1.5.3)*. `MenuBarExtra`가 만드는 상태 아이콘은 "제거되면 앱 종료"(`terminateOnRemoval`) 속성이 붙어 있고, ControlCenter가 그 아이콘 슬롯을 숨김으로 기억하고 있으면 실행 즉시 종료된다 — 1.5.2 이하에서 앱이 실행되지 않던 원인이다. AppKit으로 직접 만들면서 제거 불가(`behavior = []`)로 두어 그 경로를 없앴다. 대신 아이콘을 메뉴바에서 사용자가 빼는 것도 불가능하다.
+
 ---
 
 ## 7. 소스 구조
@@ -454,7 +476,7 @@ DiskTidy/
     Views/                 # ContentView(고정 사이드바 + AI 인스펙터 토글) + 화면별 탭 뷰 +
                            #   공용 컴포넌트(ListChrome: 상단 바·머리글·3상태 체크박스·정렬·
                            #   비중 막대, CleanableListView, RootFolderPicker, ErrorBanner,
-                           #   WindowPresenter)
+                           #   WindowPresenter, MenuBarController: 메뉴바 아이콘)
                            #   + AI(SettingsTabView, ChatPanelView, ChatMarkdownStyle,
                            #   ExplanationButton, ScreenContextModifier)
   Tests/DiskTidyTests/     # Swift Testing
