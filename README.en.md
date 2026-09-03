@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.1** (2026-09-03)
+- Latest version: **1.5.2** (2026-09-03)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,21 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.2
+
+The four list screens (caches · temp files · simulators · dev daemons) got a new interaction model. It started from feedback that the buttons at the bottom of the window went unnoticed → [1.2](#12-working-with-lists)
+
+- **Selection lives in the list header.** A tri-state checkbox (`☐` none / `[-]` some / `☑` all) replaces the old "Select all · Deselect all" buttons at the bottom. Pressing it while some rows are selected clears the selection. Keyboard: ⌘⇧A.
+- **Destructive actions moved to the top right.** Move to Trash · Delete permanently · Quit daemon · Delete device sit on the title row and turn **orange only when something is selected**.
+- **Column headers, click to sort.** Name · modified · size (runtime and last-used for simulators, memory for dev daemons), toggling ascending/descending.
+- **Search narrows the view.** Lists with hundreds of entries filter by name, path or verdict. Filtering never changes what is selected, and the header checkbox only touches **visible** rows.
+- **Deletion progress and cancel.** A multi-gigabyte entry can take seconds on its own, so deletion reports `3/12` and cancelling skips only entries that have not started → [4](#4-deletion-policy)
+- **Size share bars** show at a glance that a few entries account for most of the list.
+- Right-click a row for **Show in Finder · Copy path** (PID and executable path for processes, UDID for simulators).
+- Fixes: the dev-daemon tab used to select processes it cannot quit, producing "8 selected · 0 quittable"; the cache tab showed no modification dates; an empty list painted a blank rectangle over the screen.
+
+> The screenshots still show the 1.5.1 layout with the bottom buttons. They will be retaken in a follow-up commit.
 
 ### What changed in 1.5.1
 
@@ -73,6 +88,25 @@ The menu-bar item shows SSD usage, refreshed every 60 seconds. Clicking it opens
 > These are real screenshots from daily use. Only the personal parts — cache entry names and project paths — are blurred.
 > The temp-files and large-files screens are exceptions: nothing met the criteria when they were taken, so qualifying dummy entries were created for the shots.
 > The settings screen has the **local CLI provider** opt-in switched on — that is a development-build-only path, and the provider does not appear in the dropdown in release builds.
+
+### 1.2 Working with lists
+
+The four screens with lists (caches · temp files · simulators · dev daemons) behave identically.
+
+| Where | What |
+|---|---|
+| Right of the title | Search · selection summary · Refresh · **action button** |
+| List header | Tri-state select-all checkbox + clickable column titles |
+| Row | Checkbox · name (full path in the tooltip) · column values · size share bar · `ⓘ` explanation button |
+| Right-click a row | Show in Finder · Copy path (PID and executable path for processes, UDID for simulators) |
+
+- The **selection summary** shows the size of the whole list while nothing is selected (`125 items · 5.04 GB`) and the selected total afterwards (`3 selected · 1.2 GB`).
+- The **action button is orange only while something is selected.** Disabled it is a plain bordered button, so colour alone tells you whether it can be pressed.
+- The **header checkbox is tri-state**: `☐` nothing, `[-]` some, `☑` all. Pressing it from `[-]` or `☑` clears the selection. The shortcut is ⌘⇧A — ⌘A is left to the AI assistant's text field.
+- **Rows that cannot be selected are excluded from the denominator.** Temp files in use and processes that cannot be quit are never part of select-all, so selecting everything does not get stuck at `[-]`.
+- **Search only narrows the view.** Selected rows stay selected while hidden (the summary count still counts them), and the header checkbox only toggles visible rows.
+- **Sorting is view-only.** It changes neither the scan result nor the deletion targets. Defaults differ per screen: size descending (caches, temp files), last used ascending (simulators), memory descending (dev daemons).
+- The temp-files tab keeps its source groups (Claude session · Codex build output · agent scratch · other) and sorts **within** a group only. Group order encodes risk, so it is not the user's to change.
 
 ---
 
@@ -269,6 +303,15 @@ If the app dies mid-move, the quarantined entry shows up in a **pending recovery
 - A successful deletion means "the path was removed". APFS snapshots or open files can delay the free-space increase, so the UI reports the number of deleted paths and the freshly read free space **separately**, and promises no amount reclaimed.
 - Failures (insufficient permissions, files in use, booted simulators) surface as an in-app warning banner and the item stays in the list. Details go to Console.app under the `com.jimmy.disktidy` subsystem.
 
+**Progress and cancel** *(new in 1.5.2)* — deletion processes one entry at a time and reports `3/12`. Cancelling **skips only entries that have not started yet.**
+
+| Screen | Entries already processed when you cancel |
+|---|---|
+| Caches (move to Trash) | Still in the Trash — you can put them back |
+| Temp files (permanent delete) | Gone — cancelling only protects what is left |
+
+A single entry (a trash move, a quarantine-plus-delete) is never split. Cancellation is only observed **between** entries, so a half-deleted directory never happens. When deletion ends, the banner and summary state how many entries were skipped.
+
 ---
 
 ## 5. AI assistant
@@ -406,7 +449,9 @@ DiskTidy/
                            #   AISettingsViewModel, ChatViewModel, ScreenContextBuilder,
                            #   ItemExplanationStore
     Views/                 # ContentView (fixed sidebar + AI inspector toggle) + per-screen tabs +
-                           #   shared components (CleanableListView, RootFolderPicker, ErrorBanner,
+                           #   shared components (ListChrome: header bar, column header,
+                           #   tri-state checkbox, sorting, share bars;
+                           #   CleanableListView, RootFolderPicker, ErrorBanner,
                            #   WindowPresenter)
                            #   + AI (SettingsTabView, ChatPanelView, ChatMarkdownStyle,
                            #   ExplanationButton, ScreenContextModifier)
