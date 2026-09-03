@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1608"
+     height="843"
+     viewBox="33 183 1608 843"
+     role="img"
+     aria-labelledby="activity-title activity-desc"
+     data-system="wwdc-diagram-v2"
+     data-mode="inline"
+     data-layout="state-machine"
+     data-color-strategy="semantic-multi-hue"
+     data-author="JunyoungJung"
+     data-created="2026-09-03"
+     xml:lang="ko"
+     font-family="SF Pro Display, SF Pro Text, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title id="activity-title">개발 데몬 활동 판정 흐름</title>
+  <desc id="activity-desc">탭이 열려 있는 동안 5초마다 프로세스별 표본을 뜨고, 직전 표본과의 차이를 계산한다. 관찰 간격 대비 CPU 2%, 디스크 1MB, 실행 중 스레드 가운데 하나라도 참이면 활동 중 배지가, 전부 거짓이면 유휴 또는 관찰 중 배지가 붙는다. 표본은 프로세스 identity별 관찰 기록에 저장되어 다음 관찰의 비교 기준이 된다.</desc>
+  <metadata id="activity-metadata">WWDC Diagram v2 기반 DiskTidy 문서 다이어그램; author JunyoungJung; created 2026-09-03.</metadata>
+
+  <defs>
+    <filter id="blueGlow" x="-30%" y="-65%" width="160%" height="230%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="14" flood-color="#0A64DC" flood-opacity="0.38"/>
+    </filter>
+    <filter id="greenGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#2FB844" flood-opacity="0.34"/>
+    </filter>
+    <filter id="yellowGlow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="13" flood-color="#EDAD25" flood-opacity="0.42"/>
+    </filter>
+    <filter id="neutralShadow" x="-28%" y="-55%" width="156%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#65696A" flood-opacity="0.26"/>
+    </filter>
+    <style>
+      .node-label { font-size: 31px; font-weight: 400; text-anchor: middle; dominant-baseline: middle; }
+      .gate-label { font-size: 27px; font-weight: 500; text-anchor: middle; }
+      .badge-label { font-size: 20px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .note-label { font-size: 29px; font-weight: 400; dominant-baseline: middle; }
+      @media (prefers-color-scheme: dark) {
+        .surface-ink { fill: #F5F5F7; }
+        .adaptive-flow[data-part="shaft"] { stroke: #9A9E9F; }
+        .adaptive-flow[data-part="head"] { fill: #9A9E9F; }
+        .purple-flow[data-part="shaft"] { stroke: #A9A5FF; }
+        .purple-flow[data-part="head"] { fill: #A9A5FF; }
+      }
+    </style>
+  </defs>
+
+  <g data-component="OrthogonalLoop" data-edge-id="log-back-to-delta" data-from="activity-log.bottom" data-to="delta.bottom">
+    <path class="purple-flow" data-part="shaft" d="M1450 740V830H600V434" fill="none" stroke="#423AAA" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter"/>
+    <path class="purple-flow" data-part="head" d="M587 434L600 410L613 434Z" fill="#423AAA" stroke="none"/>
+  </g>
+
+  <g data-component="FlowArrow" data-edge-id="sample-to-delta" data-from="sample.right" data-to="delta.left">
+    <path class="adaptive-flow" data-part="shaft" d="M360 350H406" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M406 337L430 350L406 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="delta-to-gate" data-from="delta.right" data-to="threshold-gate.left">
+    <path class="adaptive-flow" data-part="shaft" d="M770 350H846" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M846 337L870 350L846 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="gate-to-active" data-from="threshold-gate.right" data-to="active.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1130 350H1266" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1266 337L1290 350L1266 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="gate-to-idle" data-from="threshold-gate.bottom" data-to="idle.top">
+    <path class="adaptive-flow" data-part="shaft" d="M1000 460V596" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M987 596L1000 620L1013 596Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="active-to-log" data-from="active.bottom" data-to="activity-log.top">
+    <path class="adaptive-flow" data-part="shaft" d="M1420 410V596" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1407 596L1420 620L1433 596Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="idle-to-log" data-from="idle.right" data-to="activity-log.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1160 680H1206" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1206 667L1230 680L1206 693Z" fill="#65696A" stroke="none"/>
+  </g>
+
+  <g data-component="GuardBadge" data-node-id="any-true" data-variant="success">
+    <rect x="1152" y="252" width="126" height="40" rx="18" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="badge-label" x="1215" y="272" fill="#19191B">하나라도 참</text>
+  </g>
+  <g data-component="GuardBadge" data-node-id="all-false" data-variant="start">
+    <rect x="1020" y="490" width="108" height="40" rx="18" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="badge-label" x="1074" y="510" fill="#FFFFFF">전부 거짓</text>
+  </g>
+
+  <g data-component="InputOutputNode" data-node-id="sample" data-variant="neutral">
+    <rect data-part="body" x="100" y="290" width="260" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="230" y="350" fill="#19191B">5초 표본</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="delta" data-variant="blue-tone" data-tone-step="1">
+    <rect data-part="body" x="430" y="290" width="340" height="120" rx="20" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="600" y="350" fill="#FFFFFF">직전 표본과 차이</text>
+  </g>
+
+  <g data-component="DecisionGate" data-node-id="threshold-gate" data-variant="key">
+    <path data-part="body" d="M1000 240L1130 350L1000 460L870 350Z" fill="#EDAD25" filter="url(#yellowGlow)"/>
+    <text class="gate-label" data-part="label" x="1000" y="360" fill="#19191B">문턱 초과?</text>
+  </g>
+
+  <g data-component="StateNode" data-node-id="active" data-variant="optimization" data-status="active">
+    <rect data-part="surface" x="1290" y="290" width="260" height="120" rx="20" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="node-label" data-part="label" x="1420" y="350" fill="#19191B">활동 중</text>
+  </g>
+  <g data-component="StateNode" data-node-id="idle" data-variant="neutral" data-status="idle">
+    <rect data-part="surface" x="840" y="620" width="320" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="1000" y="680" fill="#19191B">유휴 · 관찰 중</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="activity-log" data-variant="blue-tone" data-tone-step="2">
+    <rect data-part="body" x="1230" y="620" width="340" height="120" rx="20" fill="#4388E0" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="1400" y="680" fill="#19191B">관찰 기록 저장</text>
+  </g>
+
+  <g data-component="AnnotationCallout" data-node-id="threshold-note" data-variant="primary" data-target="threshold-gate">
+    <g data-part="badge">
+      <rect x="100" y="920" width="88" height="40" rx="18" fill="#0A64DC" filter="url(#blueGlow)"/>
+      <text class="badge-label" data-part="badge-label" x="144" y="940" fill="#FFFFFF">문턱</text>
+    </g>
+    <text class="note-label surface-ink" data-part="label" x="216" y="940" fill="#19191B">관찰 간격 대비 CPU 2%(20초에 0.4초) · 디스크 1MB · 실행 중 스레드 &gt; 0 — 하나라도 참이면 활동 중</text>
+  </g>
+</svg>

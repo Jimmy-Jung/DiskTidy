@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1990"
+     height="865"
+     viewBox="-20 53 1990 865"
+     role="img"
+     aria-labelledby="temp-gates-title temp-gates-desc"
+     data-system="wwdc-diagram-v2"
+     data-mode="inline"
+     data-layout="pipeline-lanes"
+     data-color-strategy="tone-on-tone"
+     data-author="JunyoungJung"
+     data-created="2026-09-03"
+     xml:lang="ko"
+     font-family="SF Pro Display, SF Pro Text, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title id="temp-gates-title">임시파일 후보 판정 규칙</title>
+  <desc id="temp-gates-desc">임시파일 항목은 소유자, 파일 종류, 시간 규칙, lsof 미개방, 루트 아님 다섯 규칙을 순서대로 모두 통과할 때만 후보가 된다. 디렉터리는 하위 트리 전체가 앞의 네 규칙을 통과해야 하고, 마운트 경계 안에 있으며 쓰기 권한이 있고 깊이가 64 이하여야 한다. 하나라도 실패하거나 판정할 수 없으면 목록에서 빠진다.</desc>
+  <metadata id="temp-gates-metadata">WWDC Diagram v2 기반 DiskTidy 문서 다이어그램; author JunyoungJung; created 2026-09-03.</metadata>
+
+  <defs>
+    <filter id="stateGroupShadow" x="-25%" y="-45%" width="150%" height="210%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="19" flood-color="#77777A" flood-opacity="0.22"/>
+    </filter>
+    <filter id="blueGlow" x="-30%" y="-65%" width="160%" height="230%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="14" flood-color="#0A64DC" flood-opacity="0.38"/>
+    </filter>
+    <filter id="greenGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#2FB844" flood-opacity="0.34"/>
+    </filter>
+    <filter id="redGlow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="13" flood-color="#D22831" flood-opacity="0.42"/>
+    </filter>
+    <filter id="neutralShadow" x="-28%" y="-55%" width="156%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#65696A" flood-opacity="0.26"/>
+    </filter>
+    <style>
+      .effect-group-shadow { filter: url(#stateGroupShadow); }
+      .effect-blue-glow { filter: url(#blueGlow); }
+      .effect-green-glow { filter: url(#greenGlow); }
+      .effect-red-glow { filter: url(#redGlow); }
+      .effect-neutral-shadow { filter: url(#neutralShadow); }
+      .node-label { font-size: 29px; font-weight: 400; text-anchor: middle; dominant-baseline: middle; }
+      .lane-label { font-size: 31px; font-weight: 500; dominant-baseline: middle; }
+      .group-label { font-size: 36.5px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .badge-label { font-size: 20px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .note-label { font-size: 29px; font-weight: 400; dominant-baseline: middle; }
+      @media (prefers-color-scheme: dark) {
+        .group-surface { fill: #343436; }
+        .lane-surface { fill: #48484A; }
+        .surface-ink { fill: #F5F5F7; }
+        .adaptive-flow[data-part="shaft"] { stroke: #9A9E9F; }
+        .adaptive-flow[data-part="head"] { fill: #9A9E9F; }
+      }
+    </style>
+  </defs>
+
+  <g data-component="ContainerGroup" data-node-id="scan-time-judgement" data-variant="boundary" data-contains="item-rule-lane directory-rule-lane">
+    <rect class="group-surface effect-group-shadow" data-part="surface" x="60" y="120" width="1830" height="660" rx="40" fill="#EBEFF0"/>
+    <text class="group-label surface-ink" data-part="label" x="975" y="175" fill="#19191B">임시파일 후보 판정 (스캔 시점)</text>
+  </g>
+
+  <g data-component="ContainerGroup" data-node-id="item-rule-lane" data-variant="lane" data-color-strategy="tone-on-tone" data-contains="rule-owner rule-kind rule-age rule-open rule-root candidate">
+    <rect class="lane-surface" data-part="surface" x="110" y="210" width="1730" height="230" rx="30" fill="#FFFFFF"/>
+    <text class="lane-label surface-ink" data-part="label" x="160" y="255" fill="#19191B">항목 규칙 — 5개 모두 통과</text>
+  </g>
+
+  <g data-component="FlowArrow" data-edge-id="owner-to-kind" data-from="rule-owner.right" data-to="rule-kind.left">
+    <path class="adaptive-flow" data-part="shaft" d="M380 345H426" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M426 332L450 345L426 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="kind-to-age" data-from="rule-kind.right" data-to="rule-age.left">
+    <path class="adaptive-flow" data-part="shaft" d="M690 345H736" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M736 332L760 345L736 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="age-to-open" data-from="rule-age.right" data-to="rule-open.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1000 345H1046" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1046 332L1070 345L1046 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="open-to-root" data-from="rule-open.right" data-to="rule-root.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1310 345H1356" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1356 332L1380 345L1356 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="root-to-candidate" data-from="rule-root.right" data-to="candidate.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1620 345H1666" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1666 332L1690 345L1666 358Z" fill="#65696A" stroke="none"/>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="rule-owner" data-variant="blue-tone" data-tone-step="1">
+    <rect class="effect-blue-glow" data-part="body" x="140" y="290" width="240" height="110" rx="20" fill="#AAC1E3"/>
+    <text class="node-label" data-part="label" x="260" y="345" fill="#19191B">① 소유자가 나</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-kind" data-variant="blue-tone" data-tone-step="2">
+    <rect class="effect-blue-glow" data-part="body" x="450" y="290" width="240" height="110" rx="20" fill="#73A5E8"/>
+    <text class="node-label" data-part="label" x="570" y="345" fill="#19191B">② 파일·디렉터리</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-age" data-variant="blue-tone" data-tone-step="3">
+    <rect class="effect-blue-glow" data-part="body" x="760" y="290" width="240" height="110" rx="20" fill="#4388E0"/>
+    <text class="node-label" data-part="label" x="880" y="345" fill="#19191B">③ 시간 규칙</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-open" data-variant="blue-tone" data-tone-step="4">
+    <rect class="effect-blue-glow" data-part="body" x="1070" y="290" width="240" height="110" rx="20" fill="#0A64DC"/>
+    <text class="node-label" data-part="label" x="1190" y="345" fill="#FFFFFF">④ lsof 미개방</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-root" data-variant="blue-tone" data-tone-step="5">
+    <rect class="effect-blue-glow" data-part="body" x="1380" y="290" width="240" height="110" rx="20" fill="#084DA8"/>
+    <text class="node-label" data-part="label" x="1500" y="345" fill="#FFFFFF">⑤ 루트 아님</text>
+  </g>
+
+  <g data-component="InputOutputNode" data-node-id="candidate" data-variant="optimization">
+    <rect class="effect-green-glow" data-part="body" x="1690" y="290" width="120" height="110" rx="20" fill="#2FB844"/>
+    <text class="node-label" data-part="label" x="1750" y="345" fill="#19191B">후보</text>
+  </g>
+
+  <g data-component="ContainerGroup" data-node-id="directory-rule-lane" data-variant="lane" data-color-strategy="uniform" data-contains="dir-subtree dir-mount dir-write dir-depth">
+    <rect class="lane-surface" data-part="surface" x="110" y="500" width="1730" height="230" rx="30" fill="#FFFFFF"/>
+    <text class="lane-label surface-ink" data-part="label" x="160" y="542" fill="#19191B">디렉터리 추가 조건 — 하위 트리까지</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="dir-subtree" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="155" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="345" y="635" fill="#19191B">하위 트리 전체 ①~④ 통과</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-mount" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="575" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="765" y="635" fill="#19191B">마운트 경계 안</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-write" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="995" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="1185" y="635" fill="#19191B">쓰기 권한 있음</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-depth" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="1415" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="1605" y="635" fill="#19191B">깊이 ≤ 64</text>
+  </g>
+
+  <g data-component="AnnotationCallout" data-node-id="excluded-note" data-variant="error" data-target="item-rule-lane">
+    <g data-part="badge">
+      <rect class="effect-red-glow" x="140" y="810" width="88" height="40" rx="18" fill="#D22831"/>
+      <text class="badge-label" data-part="badge-label" x="184" y="830" fill="#FFFFFF">제외</text>
+    </g>
+    <text class="note-label surface-ink" data-part="label" x="256" y="830" fill="#19191B">하나라도 실패하거나 판정할 수 없으면 목록에서 빠진다. 디렉터리는 하위 트리 전체에 같은 규칙을 적용한다.</text>
+  </g>
+</svg>

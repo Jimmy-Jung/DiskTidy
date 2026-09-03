@@ -185,6 +185,8 @@ Two extra sections sit above the device list. Both go through `simctl`, so neith
 
 `/tmp` is a shared directory. Its top level mixes unix sockets, files owned by other users, and markers that are still in use. An entry becomes a deletion candidate only if it passes **all five** rules. Anything that cannot be decided is dropped from the list.
 
+<img src="docs/diagrams/temp-safety-gates.en.svg" width="900" alt="Temp-file candidate rules: five ordered gates — owned by me, file or directory, age rule, not open in lsof, not a root — produce a candidate, and a directory must also pass the whole subtree, mount boundary, owner-writable and depth 64 conditions">
+
 | # | Rule |
 |---|---|
 | 1 | Owned by me (`st_uid == getuid()`) |
@@ -232,6 +234,8 @@ The row badge is one of four:
 | **관찰 중** (observing) | The tab has been open for under a minute — not enough samples yet |
 | **관찰 N 동안 활동 없음** | No activity at all for the whole observation window |
 
+<img src="docs/diagrams/daemon-activity-observation.en.svg" width="900" alt="Activity decision flow: each five-second sample is diffed against the previous one; crossing any threshold marks the row active, all-false marks it idle or observing, and the sample is stored as the next baseline">
+
 - **Below 2% CPU does not count as activity.** An idle JVM still spends tens of milliseconds per interval on GC and JIT cleanup (measured); without the threshold everything reads as active.
 - **It is observation-based, so it only accumulates while the tab is open.** Samples run every 5 seconds and the list refreshes every 20; a refreshed list keeps the record as long as the process matches (PID + start time).
 - The `I` state character from `ps` (idle for 20+ seconds) is **not used** — measured: daemons idle for three hours all reported `S`.
@@ -259,6 +263,8 @@ Design details and the measurements behind them are in [`docs/memory-cleanup.md`
 4. Delete it only if the identity still matches at the quarantine location.
 
 If the app dies mid-move, the quarantined entry shows up in a **pending recovery** list on the next launch and is never removed automatically.
+
+<img src="docs/diagrams/temp-quarantine-delete.en.svg" width="900" alt="Quarantined deletion: a candidate is re-checked for identity, moved atomically into quarantine, re-checked there and then permanently deleted; a different file refuses the delete and an interrupted app leaves a pending-recovery entry">
 
 - A successful deletion means "the path was removed". APFS snapshots or open files can delay the free-space increase, so the UI reports the number of deleted paths and the freshly read free space **separately**, and promises no amount reclaimed.
 - Failures (insufficient permissions, files in use, booted simulators) surface as an in-app warning banner and the item stays in the list. Details go to Console.app under the `com.jimmy.disktidy` subsystem.
@@ -366,6 +372,7 @@ DiskTidy/
     release.yml            # builds the DMG and attaches it on a v* tag push
   docs/
     screenshots/           # README screenshots
+    diagrams/              # README SVG diagrams (Korean plus `.en` English, light and dark aware)
     memory-cleanup.md      # dev-daemon tab design (process classification, activity signals)
     temp-cleanup.md        # temp-files tab design (safety rules, quarantined deletion)
   Resources/

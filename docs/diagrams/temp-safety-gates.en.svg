@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="2010"
+     height="865"
+     viewBox="-20 53 2010 865"
+     role="img"
+     aria-labelledby="temp-gates-en-title temp-gates-en-desc"
+     data-system="wwdc-diagram-v2"
+     data-mode="inline"
+     data-layout="pipeline-lanes"
+     data-color-strategy="tone-on-tone"
+     data-author="JunyoungJung"
+     data-created="2026-09-03"
+     xml:lang="en"
+     font-family="SF Pro Display, SF Pro Text, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title id="temp-gates-en-title">Temp-file candidate rules</title>
+  <desc id="temp-gates-en-desc">A temp-file entry becomes a deletion candidate only after passing five ordered rules: owned by me, regular file or directory, the age rule, not open in lsof, and not a root itself. A directory must additionally pass rules one to four across its whole subtree, stay inside the mount boundary, be owner-writable, and stay within depth 64.</desc>
+  <metadata id="temp-gates-en-metadata">WWDC Diagram v2 based DiskTidy documentation diagram; author JunyoungJung; created 2026-09-03.</metadata>
+
+  <defs>
+    <filter id="stateGroupShadow" x="-25%" y="-45%" width="150%" height="210%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="13" stdDeviation="19" flood-color="#77777A" flood-opacity="0.22"/>
+    </filter>
+    <filter id="blueGlow" x="-30%" y="-65%" width="160%" height="230%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="14" flood-color="#0A64DC" flood-opacity="0.38"/>
+    </filter>
+    <filter id="greenGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#2FB844" flood-opacity="0.34"/>
+    </filter>
+    <filter id="redGlow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="13" flood-color="#D22831" flood-opacity="0.42"/>
+    </filter>
+    <filter id="neutralShadow" x="-28%" y="-55%" width="156%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#65696A" flood-opacity="0.26"/>
+    </filter>
+    <style>
+      .effect-group-shadow { filter: url(#stateGroupShadow); }
+      .effect-blue-glow { filter: url(#blueGlow); }
+      .effect-green-glow { filter: url(#greenGlow); }
+      .effect-red-glow { filter: url(#redGlow); }
+      .effect-neutral-shadow { filter: url(#neutralShadow); }
+      .node-label { font-size: 29px; font-weight: 400; text-anchor: middle; dominant-baseline: middle; }
+      .lane-label { font-size: 31px; font-weight: 500; dominant-baseline: middle; }
+      .group-label { font-size: 36.5px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .badge-label { font-size: 20px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .note-label { font-size: 29px; font-weight: 400; dominant-baseline: middle; }
+      @media (prefers-color-scheme: dark) {
+        .group-surface { fill: #343436; }
+        .lane-surface { fill: #48484A; }
+        .surface-ink { fill: #F5F5F7; }
+        .adaptive-flow[data-part="shaft"] { stroke: #9A9E9F; }
+        .adaptive-flow[data-part="head"] { fill: #9A9E9F; }
+      }
+    </style>
+  </defs>
+
+  <g data-component="ContainerGroup" data-node-id="scan-time-judgement" data-variant="boundary" data-contains="item-rule-lane directory-rule-lane">
+    <rect class="group-surface effect-group-shadow" data-part="surface" x="60" y="120" width="1850" height="660" rx="40" fill="#EBEFF0"/>
+    <text class="group-label surface-ink" data-part="label" x="985" y="175" fill="#19191B">Temp-file candidate rules (at scan time)</text>
+  </g>
+
+  <g data-component="ContainerGroup" data-node-id="item-rule-lane" data-variant="lane" data-color-strategy="tone-on-tone" data-contains="rule-owner rule-kind rule-age rule-open rule-root candidate">
+    <rect class="lane-surface" data-part="surface" x="110" y="210" width="1750" height="230" rx="30" fill="#FFFFFF"/>
+    <text class="lane-label surface-ink" data-part="label" x="160" y="252" fill="#19191B">Item rules — all five must pass</text>
+  </g>
+
+  <g data-component="FlowArrow" data-edge-id="owner-to-kind" data-from="rule-owner.right" data-to="rule-kind.left">
+    <path class="adaptive-flow" data-part="shaft" d="M380 345H426" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M426 332L450 345L426 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="kind-to-age" data-from="rule-kind.right" data-to="rule-age.left">
+    <path class="adaptive-flow" data-part="shaft" d="M680 345H726" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M726 332L750 345L726 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="age-to-open" data-from="rule-age.right" data-to="rule-open.left">
+    <path class="adaptive-flow" data-part="shaft" d="M980 345H1026" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1026 332L1050 345L1026 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="open-to-root" data-from="rule-open.right" data-to="rule-root.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1280 345H1326" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1326 332L1350 345L1326 358Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="root-to-candidate" data-from="rule-root.right" data-to="candidate.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1580 345H1626" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1626 332L1650 345L1626 358Z" fill="#65696A" stroke="none"/>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="rule-owner" data-variant="blue-tone" data-tone-step="1">
+    <rect class="effect-blue-glow" data-part="body" x="150" y="290" width="230" height="110" rx="20" fill="#AAC1E3"/>
+    <text class="node-label" data-part="label" x="265" y="345" fill="#19191B">1 Owned by me</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-kind" data-variant="blue-tone" data-tone-step="2">
+    <rect class="effect-blue-glow" data-part="body" x="450" y="290" width="230" height="110" rx="20" fill="#73A5E8"/>
+    <text class="node-label" data-part="label" x="565" y="345" fill="#19191B">2 File or dir</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-age" data-variant="blue-tone" data-tone-step="3">
+    <rect class="effect-blue-glow" data-part="body" x="750" y="290" width="230" height="110" rx="20" fill="#4388E0"/>
+    <text class="node-label" data-part="label" x="865" y="345" fill="#19191B">3 Age rule</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-open" data-variant="blue-tone" data-tone-step="4">
+    <rect class="effect-blue-glow" data-part="body" x="1050" y="290" width="230" height="110" rx="20" fill="#0A64DC"/>
+    <text class="node-label" data-part="label" x="1165" y="345" fill="#FFFFFF">4 Not in lsof</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="rule-root" data-variant="blue-tone" data-tone-step="5">
+    <rect class="effect-blue-glow" data-part="body" x="1350" y="290" width="230" height="110" rx="20" fill="#084DA8"/>
+    <text class="node-label" data-part="label" x="1465" y="345" fill="#FFFFFF">5 Not a root</text>
+  </g>
+
+  <g data-component="InputOutputNode" data-node-id="candidate" data-variant="optimization">
+    <rect class="effect-green-glow" data-part="body" x="1650" y="290" width="180" height="110" rx="20" fill="#2FB844"/>
+    <text class="node-label" data-part="label" x="1740" y="345" fill="#19191B">Candidate</text>
+  </g>
+
+  <g data-component="ContainerGroup" data-node-id="directory-rule-lane" data-variant="lane" data-color-strategy="uniform" data-contains="dir-subtree dir-mount dir-write dir-depth">
+    <rect class="lane-surface" data-part="surface" x="110" y="500" width="1750" height="230" rx="30" fill="#FFFFFF"/>
+    <text class="lane-label surface-ink" data-part="label" x="160" y="542" fill="#19191B">Directory adds — the whole subtree</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="dir-subtree" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="155" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="345" y="635" fill="#19191B">Whole subtree passes 1–4</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-mount" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="575" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="765" y="635" fill="#19191B">Inside mount boundary</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-write" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="995" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="1185" y="635" fill="#19191B">Owner-writable</text>
+  </g>
+  <g data-component="ProcessNode" data-node-id="dir-depth" data-variant="neutral">
+    <rect class="effect-neutral-shadow" data-part="body" x="1415" y="580" width="380" height="110" rx="20" fill="#9A9E9F"/>
+    <text class="node-label" data-part="label" x="1605" y="635" fill="#19191B">Depth ≤ 64</text>
+  </g>
+
+  <g data-component="AnnotationCallout" data-node-id="excluded-note" data-variant="error" data-target="item-rule-lane">
+    <g data-part="badge">
+      <rect class="effect-red-glow" x="140" y="810" width="124" height="40" rx="18" fill="#D22831"/>
+      <text class="badge-label" data-part="badge-label" x="202" y="830" fill="#FFFFFF">Dropped</text>
+    </g>
+    <text class="note-label surface-ink" data-part="label" x="292" y="830" fill="#19191B">Anything that fails or cannot be decided leaves the list. A directory is judged by its entire subtree.</text>
+  </g>
+</svg>

@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1680"
+     height="582"
+     viewBox="77 184 1680 582"
+     role="img"
+     aria-labelledby="quarantine-title quarantine-desc"
+     data-system="wwdc-diagram-v2"
+     data-mode="inline"
+     data-layout="state-machine"
+     data-color-strategy="semantic-multi-hue"
+     data-author="JunyoungJung"
+     data-created="2026-09-03"
+     xml:lang="ko"
+     font-family="SF Pro Display, SF Pro Text, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title id="quarantine-title">임시파일 격리 삭제 절차</title>
+  <desc id="quarantine-desc">선택한 후보는 스캔 시점의 파일 동일성을 다시 확인한 뒤, 같은 볼륨의 격리 디렉터리로 원자적으로 옮겨지고, 격리 위치에서 동일성이 유지될 때만 완전 삭제된다. 동일성이 다르면 삭제를 거부하고, 이동 도중 앱이 멈추면 격리 항목이 다음 실행의 복구 대기 목록에 남는다.</desc>
+  <metadata id="quarantine-metadata">WWDC Diagram v2 기반 DiskTidy 문서 다이어그램; author JunyoungJung; created 2026-09-03.</metadata>
+
+  <defs>
+    <filter id="blueGlow" x="-30%" y="-65%" width="160%" height="230%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="14" flood-color="#0A64DC" flood-opacity="0.38"/>
+    </filter>
+    <filter id="greenGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#2FB844" flood-opacity="0.34"/>
+    </filter>
+    <filter id="purpleGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#423AAA" flood-opacity="0.31"/>
+    </filter>
+    <filter id="redGlow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="13" flood-color="#D22831" flood-opacity="0.42"/>
+    </filter>
+    <filter id="neutralShadow" x="-28%" y="-55%" width="156%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#65696A" flood-opacity="0.26"/>
+    </filter>
+    <style>
+      .node-label { font-size: 31px; font-weight: 400; text-anchor: middle; dominant-baseline: middle; }
+      .badge-label { font-size: 20px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      @media (prefers-color-scheme: dark) {
+        .adaptive-flow[data-part="shaft"] { stroke: #9A9E9F; }
+        .adaptive-flow[data-part="head"] { fill: #9A9E9F; }
+        .adaptive-marker[data-part="ring"] { stroke: #9A9E9F; }
+        .adaptive-marker[data-part="dot"] { fill: #9A9E9F; }
+      }
+    </style>
+  </defs>
+
+  <g data-component="FlowArrow" data-edge-id="initial-to-candidate" data-from="initial.right" data-to="candidate.left">
+    <path class="adaptive-flow" data-part="shaft" d="M143 350H196" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M196 337L220 350L196 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="candidate-to-verify" data-from="candidate.right" data-to="verify.left">
+    <path class="adaptive-flow" data-part="shaft" d="M420 350H466" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M466 337L490 350L466 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="verify-to-quarantine" data-from="verify.right" data-to="quarantine.left">
+    <path class="adaptive-flow" data-part="shaft" d="M770 350H816" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M816 337L840 350L816 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="quarantine-to-delete" data-from="quarantine.right" data-to="delete.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1260 350H1306" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1306 337L1330 350L1306 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="delete-to-terminal" data-from="delete.right" data-to="terminal.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1590 350H1642" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1642 337L1666 350L1642 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="verify-to-rejected" data-from="verify.error" data-to="rejected.top" data-variant="error">
+    <path data-part="shaft" d="M630 410V546" fill="none" stroke="#D22831" stroke-width="7" stroke-linecap="butt"/>
+    <path data-part="head" d="M617 546L630 570L643 546Z" fill="#D22831" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="quarantine-to-pending" data-from="quarantine.error" data-to="pending.top" data-variant="retry">
+    <path data-part="shaft" d="M1050 410V546" fill="none" stroke="#423AAA" stroke-width="7" stroke-linecap="butt"/>
+    <path data-part="head" d="M1037 546L1050 570L1063 546Z" fill="#423AAA" stroke="none"/>
+  </g>
+
+  <g data-component="GuardBadge" data-node-id="identity-match" data-variant="success">
+    <rect x="740" y="246" width="106" height="40" rx="18" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="badge-label" x="793" y="266" fill="#19191B">일치</text>
+  </g>
+  <g data-component="GuardBadge" data-node-id="quarantine-ok" data-variant="success">
+    <rect x="1208" y="246" width="174" height="40" rx="18" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="badge-label" x="1295" y="266" fill="#19191B">격리 위치 재확인</text>
+  </g>
+  <g data-component="GuardBadge" data-node-id="identity-changed" data-variant="error">
+    <rect x="660" y="458" width="128" height="40" rx="18" fill="#D22831" filter="url(#redGlow)"/>
+    <text class="badge-label" x="724" y="478" fill="#FFFFFF">다른 파일</text>
+  </g>
+  <g data-component="GuardBadge" data-node-id="app-interrupted" data-variant="retry">
+    <rect x="1080" y="458" width="112" height="40" rx="18" fill="#423AAA" filter="url(#purpleGlow)"/>
+    <text class="badge-label" x="1136" y="478" fill="#FFFFFF">앱 중단</text>
+  </g>
+
+  <g data-component="StateMarker" data-node-id="initial" data-variant="initial">
+    <circle class="adaptive-marker" data-part="dot" cx="130" cy="350" r="13" fill="#65696A"/>
+  </g>
+
+  <g data-component="StateNode" data-node-id="candidate" data-variant="neutral" data-status="selected">
+    <rect data-part="surface" x="220" y="290" width="200" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="320" y="350" fill="#19191B">후보</text>
+  </g>
+  <g data-component="StateNode" data-node-id="verify" data-variant="primary" data-status="verifying">
+    <rect data-part="surface" x="490" y="290" width="280" height="120" rx="20" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="630" y="350" fill="#FFFFFF">동일성 재확인</text>
+  </g>
+  <g data-component="StateNode" data-node-id="quarantine" data-variant="primary" data-status="quarantined">
+    <rect data-part="surface" x="840" y="290" width="420" height="120" rx="20" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="1050" y="350" fill="#FFFFFF">격리 디렉터리로 원자 이동</text>
+  </g>
+  <g data-component="StateNode" data-node-id="delete" data-variant="optimization" data-status="deleted">
+    <rect data-part="surface" x="1330" y="290" width="260" height="120" rx="20" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="node-label" data-part="label" x="1460" y="350" fill="#19191B">완전 삭제</text>
+  </g>
+  <g data-component="StateNode" data-node-id="rejected" data-variant="error" data-status="rejected">
+    <rect data-part="surface" x="490" y="570" width="280" height="120" rx="20" fill="#D22831" filter="url(#redGlow)"/>
+    <text class="node-label" data-part="label" x="630" y="630" fill="#FFFFFF">삭제 거부</text>
+  </g>
+  <g data-component="StateNode" data-node-id="pending" data-variant="neutral" data-status="pending-recovery">
+    <rect data-part="surface" x="890" y="570" width="320" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="1050" y="630" fill="#19191B">복구 대기 목록</text>
+  </g>
+
+  <g data-component="StateMarker" data-node-id="terminal" data-variant="terminal">
+    <circle class="adaptive-marker" data-part="ring" cx="1690" cy="350" r="24" fill="none" stroke="#65696A" stroke-width="6"/>
+    <circle class="adaptive-marker" data-part="dot" cx="1690" cy="350" r="12" fill="#65696A"/>
+  </g>
+</svg>

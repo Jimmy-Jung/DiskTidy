@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1610"
+     height="843"
+     viewBox="31 183 1610 843"
+     role="img"
+     aria-labelledby="activity-en-title activity-en-desc"
+     data-system="wwdc-diagram-v2"
+     data-mode="inline"
+     data-layout="state-machine"
+     data-color-strategy="semantic-multi-hue"
+     data-author="JunyoungJung"
+     data-created="2026-09-03"
+     xml:lang="en"
+     font-family="SF Pro Display, SF Pro Text, -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial, sans-serif">
+  <title id="activity-en-title">How dev-daemon activity is decided</title>
+  <desc id="activity-en-desc">While the tab is open the app samples every process every five seconds and diffs the sample against the previous one. If CPU rose by 2% of the interval, disk I/O by 1 MB, or a thread is running, the row shows the active badge; if all three are false it shows idle or observing. Each sample is stored per process identity and becomes the baseline for the next observation.</desc>
+  <metadata id="activity-en-metadata">WWDC Diagram v2 based DiskTidy documentation diagram; author JunyoungJung; created 2026-09-03.</metadata>
+
+  <defs>
+    <filter id="blueGlow" x="-30%" y="-65%" width="160%" height="230%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="9" stdDeviation="14" flood-color="#0A64DC" flood-opacity="0.38"/>
+    </filter>
+    <filter id="greenGlow" x="-12%" y="-70%" width="124%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="6" stdDeviation="14" flood-color="#2FB844" flood-opacity="0.34"/>
+    </filter>
+    <filter id="yellowGlow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="7" stdDeviation="13" flood-color="#EDAD25" flood-opacity="0.42"/>
+    </filter>
+    <filter id="neutralShadow" x="-28%" y="-55%" width="156%" height="220%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#65696A" flood-opacity="0.26"/>
+    </filter>
+    <style>
+      .node-label { font-size: 31px; font-weight: 400; text-anchor: middle; dominant-baseline: middle; }
+      .gate-label { font-size: 27px; font-weight: 500; text-anchor: middle; }
+      .badge-label { font-size: 20px; font-weight: 500; text-anchor: middle; dominant-baseline: middle; }
+      .note-label { font-size: 29px; font-weight: 400; dominant-baseline: middle; }
+      @media (prefers-color-scheme: dark) {
+        .surface-ink { fill: #F5F5F7; }
+        .adaptive-flow[data-part="shaft"] { stroke: #9A9E9F; }
+        .adaptive-flow[data-part="head"] { fill: #9A9E9F; }
+        .purple-flow[data-part="shaft"] { stroke: #A9A5FF; }
+        .purple-flow[data-part="head"] { fill: #A9A5FF; }
+      }
+    </style>
+  </defs>
+
+  <g data-component="OrthogonalLoop" data-edge-id="log-back-to-delta" data-from="activity-log.bottom" data-to="delta.bottom">
+    <path class="purple-flow" data-part="shaft" d="M1450 740V830H600V434" fill="none" stroke="#423AAA" stroke-width="7" stroke-linecap="butt" stroke-linejoin="miter"/>
+    <path class="purple-flow" data-part="head" d="M587 434L600 410L613 434Z" fill="#423AAA" stroke="none"/>
+  </g>
+
+  <g data-component="FlowArrow" data-edge-id="sample-to-delta" data-from="sample.right" data-to="delta.left">
+    <path class="adaptive-flow" data-part="shaft" d="M360 350H406" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M406 337L430 350L406 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="delta-to-gate" data-from="delta.right" data-to="threshold-gate.left">
+    <path class="adaptive-flow" data-part="shaft" d="M770 350H846" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M846 337L870 350L846 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="gate-to-active" data-from="threshold-gate.right" data-to="active.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1130 350H1266" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1266 337L1290 350L1266 363Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="gate-to-idle" data-from="threshold-gate.bottom" data-to="idle.top">
+    <path class="adaptive-flow" data-part="shaft" d="M1000 460V596" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M987 596L1000 620L1013 596Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="active-to-log" data-from="active.bottom" data-to="activity-log.top">
+    <path class="adaptive-flow" data-part="shaft" d="M1420 410V596" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1407 596L1420 620L1433 596Z" fill="#65696A" stroke="none"/>
+  </g>
+  <g data-component="FlowArrow" data-edge-id="idle-to-log" data-from="idle.right" data-to="activity-log.left">
+    <path class="adaptive-flow" data-part="shaft" d="M1160 680H1206" fill="none" stroke="#65696A" stroke-width="7" stroke-linecap="butt"/>
+    <path class="adaptive-flow" data-part="head" d="M1206 667L1230 680L1206 693Z" fill="#65696A" stroke="none"/>
+  </g>
+
+  <g data-component="GuardBadge" data-node-id="any-true" data-variant="success">
+    <rect x="1155" y="252" width="120" height="40" rx="18" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="badge-label" x="1215" y="272" fill="#19191B">any true</text>
+  </g>
+  <g data-component="GuardBadge" data-node-id="all-false" data-variant="start">
+    <rect x="1017" y="490" width="114" height="40" rx="18" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="badge-label" x="1074" y="510" fill="#FFFFFF">all false</text>
+  </g>
+
+  <g data-component="InputOutputNode" data-node-id="sample" data-variant="neutral">
+    <rect data-part="body" x="100" y="290" width="260" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="230" y="350" fill="#19191B">5 s sample</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="delta" data-variant="blue-tone" data-tone-step="1">
+    <rect data-part="body" x="430" y="290" width="340" height="120" rx="20" fill="#0A64DC" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="600" y="350" fill="#FFFFFF">Diff vs. previous</text>
+  </g>
+
+  <g data-component="DecisionGate" data-node-id="threshold-gate" data-variant="key">
+    <path data-part="body" d="M1000 240L1130 350L1000 460L870 350Z" fill="#EDAD25" filter="url(#yellowGlow)"/>
+    <text class="gate-label" data-part="label" x="1000" y="360" fill="#19191B">Over threshold?</text>
+  </g>
+
+  <g data-component="StateNode" data-node-id="active" data-variant="optimization" data-status="active">
+    <rect data-part="surface" x="1290" y="290" width="260" height="120" rx="20" fill="#2FB844" filter="url(#greenGlow)"/>
+    <text class="node-label" data-part="label" x="1420" y="350" fill="#19191B">Active</text>
+  </g>
+  <g data-component="StateNode" data-node-id="idle" data-variant="neutral" data-status="idle">
+    <rect data-part="surface" x="840" y="620" width="320" height="120" rx="20" fill="#9A9E9F" filter="url(#neutralShadow)"/>
+    <text class="node-label" data-part="label" x="1000" y="680" fill="#19191B">Idle · observing</text>
+  </g>
+
+  <g data-component="ProcessNode" data-node-id="activity-log" data-variant="blue-tone" data-tone-step="2">
+    <rect data-part="body" x="1230" y="620" width="340" height="120" rx="20" fill="#4388E0" filter="url(#blueGlow)"/>
+    <text class="node-label" data-part="label" x="1400" y="680" fill="#19191B">Save to activity log</text>
+  </g>
+
+  <g data-component="AnnotationCallout" data-node-id="threshold-note" data-variant="primary" data-target="threshold-gate">
+    <g data-part="badge">
+      <rect x="100" y="920" width="131" height="40" rx="18" fill="#0A64DC" filter="url(#blueGlow)"/>
+      <text class="badge-label" data-part="badge-label" x="165" y="940" fill="#FFFFFF">threshold</text>
+    </g>
+    <text class="note-label surface-ink" data-part="label" x="259" y="940" fill="#19191B">CPU ≥ 2% of the interval (0.4 s per 20 s) · 1 MB disk I/O · a running thread — any one counts as active</text>
+  </g>
+</svg>
