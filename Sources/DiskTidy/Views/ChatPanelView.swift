@@ -6,8 +6,10 @@ import SwiftUI
 struct ChatPanelView: View {
     /// 인스펙터 컬럼 폭. 사용자가 경계를 끌어 바꾼다.
     /// 340pt로는 표 세 열과 80자 코드가 들어가지 않는다.
-    static let defaultWidth: Double = 440
-    static let minimumWidth: Double = 320
+    static let defaultWidth: Double = 400
+    /// 실측: 제목 줄("AI 도우미" + "새 대화")과 입력 줄이 이만큼을 요구한다. 더 좁히면 버튼이
+    /// 잘리고, 부족한 폭을 사이드바가 내준다 — `ContentView`의 최소 폭 계산 참고.
+    static let minimumWidth: Double = 380
     static let maximumWidth: Double = 720
 
     private static let scrollSpace = "ChatScroll"

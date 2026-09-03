@@ -435,21 +435,36 @@ struct TabHeader<Actions: View>: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(title).font(.title2.bold())
+            // 창이 좁아지면(AI 도우미를 열면 본문이 그만큼 줄어든다) 제목부터 줄인다.
+            // 어느 화면인지는 사이드바에도 표시돼 있어 여기서 잘려도 길을 잃지 않는다.
+            // 제목은 요약·검색보다 늦게 줄어든다. 좁은 창에서도 어느 화면인지가 먼저 읽혀야 한다.
+            // 잘린 전체 제목은 툴팁으로 남긴다.
+            Text(title)
+                .font(.title2.bold())
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(title)
             if isWorking { ProgressView().controlSize(.small) }
-            Spacer(minLength: 12)
+            Spacer(minLength: 8)
             if let search {
                 // 목록이 수백 개라 눈으로 찾을 수 없다. 걸러 보기는 선택을 건드리지 않는다 —
                 // 이미 고른 항목은 걸러져 보이지 않아도 선택 요약에 그대로 남는다.
+                //
+                // 폭을 고정하지 않는다. 고정하면 좁은 창에서 상단 바가 줄어들지 못해 남는 폭을
+                // 사이드바가 내주고, AI 도우미를 열 때 사이드바가 밀렸다(실측).
                 TextField("검색", text: search)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 150)
+                    .frame(minWidth: 60, idealWidth: 110, maxWidth: 180)
                     .help("이름으로 걸러 봅니다. 선택은 그대로 유지됩니다.")
             }
             if let summary {
+                // 우선순위를 낮추지 않는다. 낮추면 좁은 창에서 이 값(몇 개·총 용량)이 먼저
+                // 사라지는데, 그건 이 화면이 답해야 하는 첫 질문이다. 줄어드는 것은 검색창이다.
                 Text(summary)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             Button("새로고침") { refresh() }
                 .disabled(isWorking)

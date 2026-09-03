@@ -26,6 +26,13 @@ private let sidebarItems: [SidebarItem] = [
 ]
 
 struct ContentView: View {
+    /// 사이드바 폭. 창 최소 폭 계산과 열 폭 고정이 같은 값을 써야 한다.
+    private static let sidebarWidth: CGFloat = 200
+    /// 본문이 실제로 요구하는 폭(실측). 목록 상단 바(제목·검색·요약·새로고침·액션)와 열
+    /// 머리글이 이만큼을 가져간다. 이보다 좁히면 `NavigationSplitView`는 본문을 줄이는 대신
+    /// **사이드바를 눌러** 항목 이름이 왼쪽에서 잘린다.
+    private static let detailMinimumWidth: CGFloat = 660
+
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var update: UpdateViewModel
     @EnvironmentObject private var fileAccess: FileAccessViewModel
@@ -59,7 +66,13 @@ struct ContentView: View {
                 UpdateButton(viewModel: update)
             }
             // 폭까지 고정한다. 드래그로 좁히면 그것도 툴바 재배치를 부른다.
-            .navigationSplitViewColumnWidth(200)
+            //
+            // min·ideal·max를 같은 값으로 준다. 값 하나만 주는 형태는 폭이 모자랄 때 사이드바를
+            // 먼저 줄여서, AI 도우미를 열면 사이드바가 밀려 항목이 잘렸다(실측). 상·하한을 함께
+            // 못 박으면 부족한 폭은 본문·인스펙터가 나눠 감당한다.
+            .navigationSplitViewColumnWidth(
+                min: Self.sidebarWidth, ideal: Self.sidebarWidth, max: Self.sidebarWidth
+            )
             .toolbar(removing: .sidebarToggle)
         } detail: {
             detailView(for: selectedTab ?? 0)
@@ -86,9 +99,17 @@ struct ContentView: View {
                     }
                 }
         }
-        // 사이드바 200 + 본문 620. 인스펙터는 창을 넓히지 않고 본문을 나눠 쓴다 —
-        // Xcode 인스펙터와 같은 감각이고, 열 때마다 창이 튀지 않는다.
-        .frame(minWidth: 820, minHeight: 480)
+        // 사이드바 200 + 본문 620. AI 도우미를 열면 최소 폭을 함께 올린다.
+        //
+        // 올리지 않으면 사이드바 200 + 인스펙터 400이 창 폭을 넘어서고, 그때 줄어드는 것은
+        // **사이드바**다 — 900pt 창에서 사이드바가 화면 밖으로 밀려 항목이 보이지 않았다(실측).
+        // 창이 한 번 넓어지는 편이 사이드바를 잃는 것보다 낫다.
+        .frame(
+            minWidth: isChatVisible
+                ? Self.sidebarWidth + Self.detailMinimumWidth + ChatPanelView.minimumWidth
+                : Self.sidebarWidth + Self.detailMinimumWidth,
+            minHeight: 480
+        )
         // 창이 실제로 생긴 뒤 한 번 더 올린다. 앱 델리게이트의 실행 알림은 SwiftUI가
         // 창을 만들기 전에 올 수 있어서, 그 시점에는 올릴 대상이 없다.
         // 첫 렌더 트랜잭션이 끝난 뒤에 올린다. `onAppear` 안에서 창 레벨·컬렉션 동작을 바꾸고
