@@ -7,7 +7,7 @@ struct AndroidEmulatorTabView: View {
     var body: some View {
         CleanableListView(title: "Android 에뮬레이터 (AVD)", viewModel: viewModel)
             // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
-            .onAppear { viewModel.refresh() }
+            .onAppearDeferred { viewModel.refresh() }
             .screenContext("Android 에뮬레이터") { [viewModel] in
                 ScreenContextBuilder.cleanableList(
                     title: "Android 에뮬레이터 (AVD)",

@@ -20,6 +20,7 @@ struct ScreenContextModifier: ViewModifier {
     let snapshot: @MainActor () -> ScreenContext
 
     func body(content: Content) -> some View {
-        content.onAppear { store.register(title: title, snapshot: snapshot) }
+        // `title`은 @Published다. 뷰 업데이트 안에서 발행하지 않도록 미룬다 — `onAppearDeferred` 주석 참고.
+        content.onAppearDeferred { store.register(title: title, snapshot: snapshot) }
     }
 }

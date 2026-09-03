@@ -26,6 +26,11 @@ private let sidebarItems: [SidebarItem] = [
 struct ContentView: View {
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var update: UpdateViewModel
+    // 사이드바 선택은 이 뷰의 `@State`로 받고 `navState`와는 `onChange`로 맞춘다.
+    // `List(selection:)`을 `navState.selectedTab`(@Published)에 직접 묶으면 macOS는 클릭을 처리하는
+    // 뷰 업데이트 안에서 그 값을 발행해 "Publishing changes from within view updates" 경고를 내고,
+    // 그 뒤의 렌더가 깨져 detail이 검게 남는다 — `onAppearDeferred` 주석 참고.
+    @State private var selectedTab: Int? = 0
     // 탭 ViewModel은 여기(창 수명)에 묶는다. 탭 뷰 안에 두면 탭 전환마다 파괴되어
     // 재진입할 때 이전 스캔 결과가 사라진다 — `TabViewModels` 참고.
     @StateObject private var tabs = TabViewModels()
@@ -45,7 +50,7 @@ struct ContentView: View {
             // 아이템을 강제로 그룹화하고 `ToolbarSpacer(.fixed)`로도 끊기지 않는다(실측).
             // 새 버전이 없으면 `UpdateButton`이 아무것도 그리지 않아 목록만 남는다.
             VStack(spacing: 0) {
-                List(sidebarItems, selection: $navState.selectedTab) { item in
+                List(sidebarItems, selection: $selectedTab) { item in
                     Label(item.title, systemImage: item.systemImage)
                 }
                 UpdateButton(viewModel: update)
@@ -54,7 +59,7 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(200)
             .toolbar(removing: .sidebarToggle)
         } detail: {
-            detailView(for: navState.selectedTab ?? 0)
+            detailView(for: selectedTab ?? 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // 챗봇은 macOS 표준 인스펙터로 띄운다. 열고 닫는 애니메이션, 경계
                 // 드래그, 폭 저장을 전부 시스템이 한다. 직접 `HStack` + 구분선 +
@@ -83,7 +88,17 @@ struct ContentView: View {
         .frame(minWidth: 820, minHeight: 480)
         // 창이 실제로 생긴 뒤 한 번 더 올린다. 앱 델리게이트의 실행 알림은 SwiftUI가
         // 창을 만들기 전에 올 수 있어서, 그 시점에는 올릴 대상이 없다.
-        .onAppear { WindowPresenter.present(alwaysOnTop: isAlwaysOnTop) }
+        // 첫 렌더 트랜잭션이 끝난 뒤에 올린다. `onAppear` 안에서 창 레벨·컬렉션 동작을 바꾸고
+        // `makeKeyAndOrderFront`까지 부르면 AppKit이 레이아웃을 재진입시켜 첫 창이 그려지지 않거나
+        // 죽을 수 있다 — `onAppearDeferred` 주석 참고.
+        .onAppearDeferred { WindowPresenter.present(alwaysOnTop: isAlwaysOnTop) }
+        // 챗봇 패널의 "설정 열기"처럼 바깥에서 탭 이동을 요청하면 따라간다.
+        .onChange(of: navState.selectedTab) { selectedTab = navState.selectedTab }
+        // 반대 방향도 맞춘다. 안 맞추면 같은 탭을 두 번째로 요청할 때 값이 그대로라 요청이 먹히지
+        // 않는다. `@Published` 쓰기이므로 뷰 업데이트 밖으로 미룬다.
+        .onChange(of: selectedTab) { _, newValue in
+            Task { @MainActor in navState.selectedTab = newValue }
+        }
         // 실행할 때 한 번만 묻는다. 토큰 없는 GitHub API는 시간당 60회 제한이 있고,
         // 매번 창을 열 때마다 부를 이유도 없다.
         .task { await update.checkForUpdate() }

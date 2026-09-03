@@ -30,8 +30,12 @@ struct CleanableListView: View {
                 Spacer()
             } else {
                 List {
-                    ForEach($viewModel.items) { $item in
-                        CleanableItemRow(item: $item, screenTitle: title)
+                    ForEach(viewModel.items) { item in
+                        CleanableItemRow(
+                            item: item,
+                            isSelected: $viewModel.items.field(\.isSelected, id: item.id, default: false),
+                            screenTitle: title
+                        )
                     }
                 }
             }
@@ -52,12 +56,14 @@ struct CleanableListView: View {
 
 /// 목록 한 줄. 오른쪽 `i` 버튼을 누르면 AI가 이 항목이 무엇인지 설명한다.
 private struct CleanableItemRow: View {
-    @Binding var item: CleanableItem
+    let item: CleanableItem
+    // 인덱스 바인딩(`ForEach($items)`) 대신 id로 찾는 바인딩을 받는다 — `Binding.field` 주석 참고.
+    @Binding var isSelected: Bool
     let screenTitle: String
 
     var body: some View {
         HStack {
-            Toggle(isOn: $item.isSelected) { EmptyView() }
+            Toggle(isOn: $isSelected) { EmptyView() }
                 .toggleStyle(.checkbox)
                 .labelsHidden()
             VStack(alignment: .leading) {

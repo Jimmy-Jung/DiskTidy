@@ -78,7 +78,7 @@ struct MemoryTabView: View {
         }
         // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
         // 폴링 타이머는 탭이 보이는 동안만 돈다 — `startPolling()` 주석 참고.
-        .onAppear {
+        .onAppearDeferred {
             viewModel.refreshAll()
             viewModel.startPolling()
         }
@@ -208,10 +208,13 @@ private struct ProcessList: View {
 
     var body: some View {
         List {
-            ForEach($viewModel.processes) { $process in
+            // 인덱스 바인딩(`ForEach($processes)`)은 목록이 줄면 죽는다 — `Binding.field` 주석 참고.
+            ForEach(viewModel.processes) { process in
                 HStack {
                     // 종료할 수 없는 항목에는 체크박스를 열지 않는다.
-                    Toggle(isOn: $process.isSelected) { EmptyView() }
+                    Toggle(isOn: $viewModel.processes.field(\.isSelected, id: process.id, default: false)) {
+                        EmptyView()
+                    }
                         .toggleStyle(.checkbox)
                         .labelsHidden()
                         .disabled(!process.isTerminable)

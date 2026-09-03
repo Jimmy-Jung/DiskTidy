@@ -17,8 +17,9 @@ struct BigFilesTabView: View {
             CleanableListView(title: "대용량 파일 (200MB 이상)", viewModel: listViewModel)
         }
         .padding()
-        .onAppear { syncRoots() }
-        .onChange(of: rootViewModel.roots) { syncRoots() }
+        .onAppearDeferred { syncRoots() }
+        // `syncRoots`는 @Published를 바꾼다. `onChange`도 업데이트 안에서 불릴 수 있어 같은 이유로 미룬다.
+        .onChange(of: rootViewModel.roots) { Task { @MainActor in syncRoots() } }
         .screenContext("대용량 파일") { [listViewModel] in
             ScreenContextBuilder.cleanableList(
                 title: "대용량 파일 (200MB 이상)",

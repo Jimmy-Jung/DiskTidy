@@ -10,7 +10,7 @@ struct XcodeCacheTabView: View {
             viewModel: viewModel
         )
         // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
-        .onAppear { viewModel.refresh() }
+        .onAppearDeferred { viewModel.refresh() }
         .screenContext("Xcode 캐시") { [viewModel] in
             ScreenContextBuilder.cleanableList(
                 title: "Xcode 캐시 (DerivedData · DeviceSupport · Archives)",

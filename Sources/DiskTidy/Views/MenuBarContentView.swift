@@ -27,7 +27,7 @@ struct MenuBarContentView: View {
         }
         .padding(12)
         .frame(width: 220)
-        .onAppear { storageMonitor.refresh() }
+        .onAppearDeferred { storageMonitor.refresh() }
     }
 }
 

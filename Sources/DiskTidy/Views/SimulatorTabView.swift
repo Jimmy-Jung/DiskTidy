@@ -41,9 +41,12 @@ struct SimulatorTabView: View {
             }
 
             List {
-                ForEach($viewModel.items) { $item in
+                // 인덱스 바인딩(`ForEach($items)`)은 스캔 결과로 배열이 줄면 죽는다 — `Binding.field` 주석 참고.
+                ForEach(viewModel.items) { item in
                     HStack {
-                        Toggle(isOn: $item.isSelected) { EmptyView() }
+                        Toggle(isOn: $viewModel.items.field(\.isSelected, id: item.id, default: false)) {
+                            EmptyView()
+                        }
                             .toggleStyle(.checkbox)
                             .labelsHidden()
                         VStack(alignment: .leading) {
@@ -104,7 +107,7 @@ struct SimulatorTabView: View {
         }
         .padding()
         // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
-        .onAppear { viewModel.refresh() }
+        .onAppearDeferred { viewModel.refresh() }
         .screenContext("시뮬레이터") { [viewModel] in
             ScreenContextBuilder.simulators(viewModel: viewModel)
         }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import DiskTidy
@@ -331,5 +332,46 @@ struct ReturnKeySenderTests {
     func otherKeysPassThrough() {
         #expect(action(keyCode: 0) == .pass)
         #expect(action(keyCode: 49, modifiers: [.shift]) == .pass)
+    }
+}
+
+// MARK: - 뷰 업데이트 안전장치
+
+/// `ForEach($items)`의 인덱스 바인딩을 대신하는 id 바인딩. 배열이 줄어든 뒤 옛 행이 읽어도
+/// 죽지 않아야 한다 — 그 크래시가 이 헬퍼가 존재하는 이유다(`ViewUpdateSafety.swift`).
+@MainActor
+struct ElementFieldBindingTests {
+    private struct Row: Identifiable, Equatable {
+        let id: Int
+        var isSelected = false
+    }
+
+    /// 클로저가 값을 고칠 수 있게 참조로 감싼다. 지역 `var`를 잡으면 Sendable 클로저에서 못 쓴다.
+    private final class Store {
+        var rows: [Row]
+        init(_ rows: [Row]) { self.rows = rows }
+        var binding: Binding<[Row]> { Binding(get: { self.rows }, set: { self.rows = $0 }) }
+    }
+
+    @Test("id로 찾은 원소의 필드를 읽고 쓴다")
+    func readsAndWritesByID() {
+        let store = Store([Row(id: 1), Row(id: 2)])
+        let binding = store.binding.field(\.isSelected, id: 2, default: false)
+
+        #expect(binding.wrappedValue == false)
+        binding.wrappedValue = true
+        #expect(store.rows == [Row(id: 1), Row(id: 2, isSelected: true)])
+    }
+
+    @Test("배열이 줄어 원소가 사라진 뒤에도 옛 바인딩은 죽지 않는다")
+    func staleBindingSurvivesShrink() {
+        let store = Store([Row(id: 1), Row(id: 2), Row(id: 3)])
+        let binding = store.binding.field(\.isSelected, id: 3, default: false)
+
+        // 새 스캔 결과가 목록을 통째로 갈아 끼운 상황.
+        store.rows = [Row(id: 1)]
+        #expect(binding.wrappedValue == false)
+        binding.wrappedValue = true // 대상이 없으니 무시된다
+        #expect(store.rows == [Row(id: 1)])
     }
 }

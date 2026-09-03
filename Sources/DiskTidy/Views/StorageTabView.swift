@@ -32,7 +32,7 @@ struct StorageTabView: View {
             Spacer()
         }
         .padding()
-        .onAppear { monitor.refresh() }
+        .onAppearDeferred { monitor.refresh() }
         .screenContext("SSD 용량") { [monitor] in ScreenContextBuilder.storage(monitor: monitor) }
     }
 }
