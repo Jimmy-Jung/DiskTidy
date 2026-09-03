@@ -77,6 +77,14 @@ struct TempCandidate: Identifiable, Hashable {
     let modifiedDate: Date
     let identity: FileIdentity
     var isSelected = false
+    /// 출처. 판정 규칙과 화면 그룹이 여기서 갈린다 — `AgentWorkspace` 참고.
+    var kind: TempCandidateKind = .other
+    /// 후보로 올라온 근거, 또는 사용 중이라 못 지우는 이유. 화면에 한 줄로 보인다.
+    var evidence: String = ""
+    /// 사용 중이라 보여 주기만 하는 행. 선택·삭제 불가.
+    var isInUse = false
+
+    var isDeletable: Bool { !isInUse }
 
     var id: ID {
         ID(canonicalPath: canonicalPath, device: identity.device, inode: identity.inode)
@@ -94,4 +102,13 @@ struct TempCandidate: Identifiable, Hashable {
     }()
 
     var modifiedDateString: String { Self.dayFormatter.string(from: modifiedDate) }
+
+    /// 임시파일 탭은 분 단위(30분 정지)로 판정하므로 날짜만으로는 "왜 지금 후보인지/아닌지"가 안 읽힌다.
+    private static let minuteFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+
+    var modifiedTimeString: String { Self.minuteFormatter.string(from: modifiedDate) }
 }

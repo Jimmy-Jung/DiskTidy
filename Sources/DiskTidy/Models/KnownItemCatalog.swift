@@ -136,6 +136,23 @@ enum KnownItemCatalog {
             "Expo의 로컬 캐시입니다. 지워도 됩니다 — 다음 실행에서 다시 만들어집니다."
         ),
 
+        // MARK: 에이전트 작업물 (TempScanner가 출처를 아는 tmp 항목)
+        (
+            "tmp/claude-",
+            "Claude Code 세션이 작업하며 임시로 쓴 스크래치 폴더입니다(스크립트·중간 결과·백그라운드 "
+                + "작업 출력). 세션이 끝나면 다시 쓰이지 않고, 세션을 재개해도 스크래치는 새로 만들어집니다. "
+                + "목록에 오른 것은 그 세션의 프로세스가 없고 30분 넘게 변경이 없는 것입니다."
+        ),
+        (
+            "tmp/codex-dd-",
+            "Codex가 빌드·테스트를 돌리며 `xcodebuild -derivedDataPath`로 만든 DerivedData입니다. "
+                + "지워도 됩니다 — 다음 빌드에서 다시 만들어지며, 그 한 번은 전체 빌드가 되어 오래 걸립니다."
+        ),
+        (
+            "/.com.openai.codex.",
+            "Codex 앱 서버가 풀어 둔 임시 리소스 파일입니다. 지워도 됩니다 — 필요하면 다시 만듭니다."
+        ),
+
         // MARK: 시스템 캐시
         (
             "/Library/Caches/Homebrew",

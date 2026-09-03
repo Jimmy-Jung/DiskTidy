@@ -21,7 +21,12 @@ struct TempTabView: View {
                     .disabled(viewModel.isWorking)
             }
 
-            Text("/private/tmp과 $TMPDIR의 최상위 항목 중 내 소유이고, 3일 넘게 읽지도 쓰지도 않았고, 열려 있지 않은 것만 보여 줍니다.")
+            Text(
+                "/private/tmp과 $TMPDIR에서 내 소유이고 열려 있지 않은 항목만 보여 줍니다. "
+                    + "Claude·Codex 작업물은 세션이 끝났거나 빌드가 멈춘 뒤 30분 넘게 변경이 없으면, "
+                    + "그 밖의 항목은 24시간 넘게 읽지도 쓰지도 않았을 때 후보가 됩니다. "
+                    + "사용 중인 작업물은 회색으로 보이고 선택할 수 없습니다."
+            )
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -76,43 +81,66 @@ struct TempTabView: View {
 private struct TempCandidateList: View {
     @ObservedObject var viewModel: TempCleanupViewModel
 
+    /// 출처별로 묶는다. 에이전트 작업물이 tmp의 대부분이라 그 그룹이 위에 온다.
+    /// `claudeSession`은 세션마다 값이 달라 kind가 아니라 group으로 묶는다.
+    private var groups: [(group: TempCandidateGroup, items: [TempCandidate])] {
+        let byGroup = Dictionary(grouping: viewModel.items) { $0.kind.group }
+        return TempCandidateGroup.allCases.compactMap { group in
+            byGroup[group].map { (group, $0) }
+        }
+    }
+
     var body: some View {
         List {
             // 인덱스 바인딩(`ForEach($items)`)은 스캔 결과로 배열이 줄면 죽는다 — `Binding.field` 주석 참고.
-            ForEach(viewModel.items) { item in
-                HStack {
-                    Toggle(isOn: $viewModel.items.field(\.isSelected, id: item.id, default: false)) {
-                        EmptyView()
+            ForEach(groups, id: \.group) { section in
+                Section(section.group.label) {
+                    ForEach(section.items) { item in
+                        row(item, group: section.group)
                     }
-                        .toggleStyle(.checkbox)
-                        .labelsHidden()
-                    VStack(alignment: .leading) {
-                        Text(item.name)
-                        Text("수정: \(item.modifiedDateString)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Text(item.sizeString)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    ExplanationButton(
-                        subject: ExplanationSubject(
-                            key: "temp:\(item.path.path)",
-                            title: item.name,
-                            subtitle: item.path.path,
-                            facts: [
-                                "항목: \(item.name)",
-                                "경로: \(item.path.path)",
-                                "크기: \(item.sizeString)",
-                                "마지막 수정: \(item.modifiedDateString)",
-                                "이 화면의 정리 방식: 완전 삭제 (휴지통을 거치지 않음, 되돌릴 수 없음)",
-                            ]
-                        ),
-                        screenTitle: "임시파일"
-                    )
                 }
             }
+        }
+    }
+
+    private func row(_ item: TempCandidate, group: TempCandidateGroup) -> some View {
+        HStack {
+            // 사용 중 행은 체크할 수 없다. 왜 안 지워지는지는 아래 근거 줄이 말한다.
+            Toggle(isOn: $viewModel.items.field(\.isSelected, id: item.id, default: false)) {
+                EmptyView()
+            }
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .disabled(item.isInUse)
+            VStack(alignment: .leading) {
+                Text(item.name)
+                    .foregroundStyle(item.isInUse ? .secondary : .primary)
+                Text("\(item.evidence) · 수정 \(item.modifiedTimeString)")
+                    .font(.caption)
+                    .foregroundStyle(item.isInUse ? Color.orange : Color.secondary)
+            }
+            Spacer()
+            Text(item.sizeString)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            ExplanationButton(
+                subject: ExplanationSubject(
+                    key: "temp:\(item.path.path)",
+                    title: item.name,
+                    subtitle: item.path.path,
+                    facts: [
+                        "항목: \(item.name)",
+                        "경로: \(item.path.path)",
+                        "출처: \(group.label)",
+                        "판정: \(item.evidence)",
+                        "크기: \(item.sizeString)",
+                        "마지막 수정: \(item.modifiedTimeString)",
+                        "이 화면의 정리 방식: 완전 삭제 (휴지통을 거치지 않음, 되돌릴 수 없음)",
+                    ],
+                    knownDescription: KnownItemCatalog.description(for: item.path)
+                ),
+                screenTitle: "임시파일"
+            )
         }
     }
 }

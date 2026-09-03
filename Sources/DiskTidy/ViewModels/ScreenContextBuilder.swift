@@ -104,7 +104,9 @@ enum ScreenContextBuilder {
     static func temp(viewModel: TempCleanupViewModel) -> ScreenContext {
         var lines = [
             "삭제 방식: 완전 삭제 (휴지통을 거치지 않으며 되돌릴 수 없음)",
-            "후보 조건: /private/tmp과 $TMPDIR의 최상위 항목 중 내 소유, 3일 이상 미접근, 열려 있지 않음",
+            "후보 조건: /private/tmp과 $TMPDIR에서 내 소유·열려 있지 않은 항목. "
+                + "Claude 세션 스크래치·Codex 빌드 산출물은 세션 종료/빌드 없음 + 30분 무변경, "
+                + "그 밖은 24시간 미접근. 사용 중인 에이전트 작업물은 선택 불가 행으로 표시",
         ]
         if viewModel.isScanning { lines.append("상태: 스캔 중") }
         if viewModel.isDeleting { lines.append("상태: 삭제 중") }
@@ -116,13 +118,17 @@ enum ScreenContextBuilder {
 
         let totalBytes = viewModel.items.reduce(0) { $0 + $1.sizeBytes }
         lines.append("항목 \(viewModel.items.count)개, 합계 \(format(totalBytes))")
+        let inUse = viewModel.items.filter(\.isInUse)
+        if !inUse.isEmpty {
+            lines.append("그중 사용 중 \(inUse.count)개는 선택할 수 없음 (세션·빌드가 살아 있음)")
+        }
         lines.append("선택 \(viewModel.selectedItems.count)개, \(format(viewModel.selectedBytes))")
         lines += itemLines(
             viewModel.items.map {
                 Row(
                     name: $0.name,
                     sizeBytes: $0.sizeBytes,
-                    detail: "수정 \($0.modifiedDateString)",
+                    detail: "\($0.kind.group.label) · \($0.evidence) · 수정 \($0.modifiedTimeString)",
                     isSelected: $0.isSelected
                 )
             }

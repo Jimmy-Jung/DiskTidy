@@ -47,7 +47,8 @@ final class TempCleanupViewModel: ObservableObject {
         self.availableBytes = availableBytes
     }
 
-    var selectedItems: [TempCandidate] { items.filter(\.isSelected) }
+    /// 사용 중 행은 체크돼 있어도 삭제 대상이 아니다.
+    var selectedItems: [TempCandidate] { items.filter { $0.isSelected && $0.isDeletable } }
     var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.sizeBytes } }
 
     var isWorking: Bool { isScanning || isDeleting }
@@ -134,7 +135,9 @@ final class TempCleanupViewModel: ObservableObject {
     }
 
     func selectAll(_ isSelected: Bool) {
-        for index in items.indices { items[index].isSelected = isSelected }
+        for index in items.indices where items[index].isDeletable || !isSelected {
+            items[index].isSelected = isSelected
+        }
     }
 
     /// journal ID만 넘긴다. 임의 경로 복원은 제공하지 않는다.

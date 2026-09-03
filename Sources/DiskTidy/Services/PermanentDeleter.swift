@@ -315,9 +315,15 @@ enum PermanentDeleter {
         }
         let now = Date()
 
+        // 사용 중 행은 UI가 선택을 막지만 여기서도 거부한다. 에이전트 작업물은 스캔 때 본
+        // 세션·프로세스 상태를 다시 찍는다 — 그 사이 세션이 재개됐거나 빌드가 다시 돌면 거부한다.
+        guard candidate.isDeletable,
+              AgentWorkspace.blockingReason(for: candidate.kind, path: path, live: .current()) == nil
+        else { return .refused(.inUse) }
+
         switch TempScanner.decide(
             stat: current, path: path, rootPaths: policy.rootSet,
-            openPaths: openPaths, now: now, minimumAgeDays: TempScanner.defaultMinimumAgeDays
+            openPaths: openPaths, now: now, ageRule: candidate.kind.ageRule
         ) {
         case .eligible: break
         case .inUse: return .refused(.inUse)
@@ -328,7 +334,7 @@ enum PermanentDeleter {
         if current.st_mode & S_IFMT == S_IFDIR,
            !TempScanner.isTreeSafe(
                at: path, device: current.st_dev, openPaths: openPaths, now: now,
-               minimumAgeDays: TempScanner.defaultMinimumAgeDays
+               ageRule: candidate.kind.ageRule
            ) {
             return .refused(.unsafeTree)
         }
@@ -430,7 +436,7 @@ enum PermanentDeleter {
             }
             if !TempScanner.isTreeSafe(
                 at: stagePath, device: stagedStatus.st_dev, openPaths: stagedOpenPaths,
-                now: now, minimumAgeDays: TempScanner.defaultMinimumAgeDays
+                now: now, ageRule: candidate.kind.ageRule
             ) {
                 return restoreStage(
                     record: record, journal: journal,

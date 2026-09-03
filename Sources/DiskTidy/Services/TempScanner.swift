@@ -3,9 +3,14 @@ import Foundation
 
 /// `/private/tmp`·`$TMPDIR`의 최상위 엔트리 중 **안전을 증명할 수 있는 것만** 후보로 만든다.
 /// 판정 불가는 전부 후보에서 뺀다 (fail-closed).
+///
+/// 출처를 아는 항목(Claude 세션 스크래치·Codex DerivedData·에이전트 잡파일)은 "오래됐나"가 아니라
+/// "지금 쓰는 주체가 있나"로 판정한다 — `AgentWorkspace` 참고. 출처를 모르는 항목만 보존 기간 규칙을 쓴다.
 enum TempScanner {
-    /// v1 고정 보존 기간: 3일.
-    static let defaultMinimumAgeDays = 3
+    /// 출처를 모르는 항목의 보존 기간(일). 에이전트 항목은 이 값과 무관하다.
+    /// 처음엔 3일이었다. tmp의 대부분이 에이전트 작업물이 되고 그쪽은 세션 상태로 판정하게 되자,
+    /// 남은 "출처 모름" 몫은 하루면 충분하다고 판단했다.
+    static let defaultMinimumAgeDays = 1
 
     /// 격리 디렉터리는 복구 대기 항목이 들어 있으므로 일반 후보로 잡으면 안 된다.
     static let quarantineDirectoryName = ".DiskTidyQuarantine"
@@ -30,20 +35,64 @@ enum TempScanner {
         case invalidConfiguration
     }
 
+    /// 규칙 3의 두 형태.
+    enum AgeRule: Equatable, Sendable {
+        /// `atime`·`mtime` 둘 다 이만큼 지나야 한다. 출처 모르는 항목용 —
+        /// mtime만 보면 "한 번 쓰고 계속 읽는" 파일을 날린다.
+        case cold(seconds: Int64)
+        /// `mtime`만 본다. 읽는 주체(에이전트 프로세스)는 세션·프로세스·열린 파일 검사가 잡는다.
+        /// atime까지 보면 우리 `du`가 방금 만든 파일의 atime을 건드려 영영 후보가 되지 않는다(문서 실측).
+        ///
+        /// 이 규칙의 트리 안에서는 **심볼릭 링크를 허용한다**(링크 자체만 지운다). 에이전트 스크래치는
+        /// 소스 트리를 통째로 복사해 두는 일이 흔해 상대 링크가 섞여 있고(실측: 602MB 세션이 링크
+        /// 10개 때문에 영영 후보가 되지 않았다), `removeItem`은 링크를 따라가지 않는다 — 테스트로 고정.
+        /// 최상위 후보 자체가 링크인 것은 여전히 거른다.
+        case quiet(seconds: Int64)
+
+        /// 트리 안 심볼릭 링크를 링크로만 취급해 지울 수 있는지.
+        var allowsSymbolicLinksInTree: Bool {
+            if case .quiet = self { return true }
+            return false
+        }
+
+        static func days(_ days: Int) -> AgeRule { .cold(seconds: Int64(days) * 86_400) }
+
+        var thresholdNanoseconds: Int64 {
+            switch self {
+            case .cold(let seconds), .quiet(let seconds): return seconds * 1_000_000_000
+            }
+        }
+    }
+
+    /// 검증을 통과한 엔트리. 크기는 나중에 `du`로 한 번에 채운다.
+    private struct Verified {
+        let name: String
+        let path: String
+        let status: stat
+        let kind: TempCandidateKind
+        let evidence: String
+        let isInUse: Bool
+    }
+
     // MARK: - 스캔
 
     /// `lsof` 또는 루트 열거 실패는 빈 목록이 아니라 throw다.
     /// 빈 목록을 돌려주면 "정리할 게 없다"와 "확인에 실패했다"가 구분되지 않는다.
-    static func scan(minimumAgeDays: Int = defaultMinimumAgeDays) throws -> [TempCandidate] {
+    ///
+    /// - Parameter live: 살아 있는 에이전트 세션·프로세스. 테스트가 가짜를 넣는다.
+    static func scan(
+        minimumAgeDays: Int = defaultMinimumAgeDays,
+        live: LiveAgentState = .current()
+    ) throws -> [TempCandidate] {
         guard isValidMinimumAge(minimumAgeDays) else { throw ScanError.invalidMinimumAge }
+        let otherRule = AgeRule.days(minimumAgeDays)
 
         let policy = TempRootPolicy.production
         let openPaths = try relevantOpenPaths(policy: policy)
         let rootSet = policy.rootSet
         let now = Date()
 
-        // 크기는 `du`를 한 번에 묶어 부르므로, 검증을 모두 끝낸 뒤에 채운다.
-        var verified: [(name: String, path: String, status: stat)] = []
+        var verified: [Verified] = []
         for root in policy.roots {
             // 루트의 device를 잡아 두고 자식이 같은 볼륨인지 대조한다. 마운트 포인트를
             // 품은 디렉터리는 rename이 성공하므로(실측), 그대로 두면 격리로 옮겨진 뒤
@@ -61,18 +110,44 @@ enum TempScanner {
 
                 var status = stat()
                 guard lstat(path, &status) == 0, status.st_dev == rootStatus.st_dev else { continue }
+                let isDirectory = status.st_mode & S_IFMT == S_IFDIR
+
+                // Claude Code 스크래치 루트는 통째로 후보가 아니다. 안의 세션 디렉터리 단위로 내려간다 —
+                // 통째로 잡으면 지금 돌고 있는 세션의 작업 파일까지 함께 날린다.
+                if isDirectory, name == AgentWorkspace.claudeRootName, status.st_uid == getuid() {
+                    verified += claudeSessions(
+                        under: path, device: rootStatus.st_dev, rootPaths: rootSet,
+                        openPaths: openPaths, now: now, live: live
+                    )
+                    continue
+                }
+
+                let kind = AgentWorkspace.classify(name: name, isDirectory: isDirectory, path: path)
+                if let reason = AgentWorkspace.blockingReason(for: kind, path: path, live: live) {
+                    // 사용 중인 에이전트 작업물은 왜 안 지워지는지 보이게 비활성 행으로 올린다.
+                    // 잡파일까지 올리면 목록이 1바이트 파일로 덮이므로 큰 것만.
+                    if kind.group == .codexDerivedData {
+                        verified.append(Verified(
+                            name: name, path: path, status: status, kind: kind, evidence: reason, isInUse: true
+                        ))
+                    }
+                    continue
+                }
+
+                let rule = kind.group == .other ? otherRule : kind.ageRule
                 guard decide(
                     stat: status, path: path, rootPaths: rootSet,
-                    openPaths: openPaths, now: now, minimumAgeDays: minimumAgeDays
+                    openPaths: openPaths, now: now, ageRule: rule
                 ) == .eligible else { continue }
 
-                if status.st_mode & S_IFMT == S_IFDIR,
+                if isDirectory,
                    !isTreeSafe(
-                       at: path, device: rootStatus.st_dev, openPaths: openPaths,
-                       now: now, minimumAgeDays: minimumAgeDays
+                       at: path, device: rootStatus.st_dev, openPaths: openPaths, now: now, ageRule: rule
                    ) { continue }
 
-                verified.append((name, path, status))
+                verified.append(Verified(
+                    name: name, path: path, status: status, kind: kind, evidence: kind.evidence, isInUse: false
+                ))
             }
         }
 
@@ -86,10 +161,66 @@ enum TempScanner {
                     canonicalPath: entry.path,
                     sizeBytes: sizes[url] ?? 0,
                     modifiedDate: FileTimestamp(entry.status.st_mtimespec).date,
-                    identity: FileIdentity(entry.status)
+                    identity: FileIdentity(entry.status),
+                    kind: entry.kind,
+                    evidence: entry.evidence,
+                    isInUse: entry.isInUse
                 )
             }
             .sorted { $0.sizeBytes > $1.sizeBytes }
+    }
+
+    /// `claude-<uid>/<프로젝트 슬러그>/<세션 UUID>` 두 단계를 내려가 세션 디렉터리를 후보 단위로 삼는다.
+    /// 살아 있는 세션은 판정하지 않고 사용 중 행으로 올린다. 슬러그 디렉터리는 후보가 아니다.
+    private static func claudeSessions(
+        under claudeRoot: String,
+        device: dev_t,
+        rootPaths: Set<String>,
+        openPaths: Set<String>,
+        now: Date,
+        live: LiveAgentState
+    ) -> [Verified] {
+        var found: [Verified] = []
+        let projects = (try? FileManager.default.contentsOfDirectory(atPath: claudeRoot)) ?? []
+        for project in projects {
+            let projectPath = claudeRoot + "/" + project
+            var projectStatus = stat()
+            guard lstat(projectPath, &projectStatus) == 0,
+                  projectStatus.st_mode & S_IFMT == S_IFDIR,
+                  projectStatus.st_dev == device,
+                  projectStatus.st_uid == getuid() else { continue }
+
+            let sessions = (try? FileManager.default.contentsOfDirectory(atPath: projectPath)) ?? []
+            for session in sessions where AgentWorkspace.isSessionID(session) {
+                let path = projectPath + "/" + session
+                var status = stat()
+                guard lstat(path, &status) == 0,
+                      status.st_dev == device,
+                      status.st_mode & S_IFMT == S_IFDIR else { continue }
+
+                let kind = TempCandidateKind.claudeSession(id: session)
+                let name = AgentWorkspace.claudeSessionDisplayName(project: project, sessionID: session)
+                if let reason = AgentWorkspace.blockingReason(for: kind, path: path, live: live) {
+                    found.append(Verified(
+                        name: name, path: path, status: status, kind: kind, evidence: reason, isInUse: true
+                    ))
+                    continue
+                }
+
+                let rule = kind.ageRule
+                guard decide(
+                    stat: status, path: path, rootPaths: rootPaths,
+                    openPaths: openPaths, now: now, ageRule: rule
+                ) == .eligible,
+                    isTreeSafe(at: path, device: device, openPaths: openPaths, now: now, ageRule: rule)
+                else { continue }
+
+                found.append(Verified(
+                    name: name, path: path, status: status, kind: kind, evidence: kind.evidence, isInUse: false
+                ))
+            }
+        }
+        return found
     }
 
     // MARK: - 규칙 4: 열린 경로
@@ -143,9 +274,8 @@ enum TempScanner {
         rootPaths: Set<String>,
         openPaths: Set<String>,
         now: Date,
-        minimumAgeDays: Int
+        ageRule: AgeRule
     ) -> Decision {
-        guard isValidMinimumAge(minimumAgeDays) else { return .invalidConfiguration }
         // canonicalize에 실패한 경로가 여기까지 오면 경계 검사를 신뢰할 수 없다.
         guard path.hasPrefix("/") else { return .invalidConfiguration }
 
@@ -164,11 +294,13 @@ enum TempScanner {
         // 그 시점에 mtime이 바뀌어 identity 대조가 복원까지 막는다.
         guard type != S_IFDIR || status.st_mode & S_IWUSR != 0 else { return .wrongType }
 
-        // 규칙 3: mtime만 보면 "한 번 쓰고 계속 읽는" 파일을 날린다. 둘 다 넘어야 한다.
-        let threshold = Int64(minimumAgeDays) * 86_400 * 1_000_000_000
+        // 규칙 3: `.cold`는 mtime·atime 둘 다, `.quiet`는 mtime만 — 이유는 `AgeRule` 주석.
+        let threshold = ageRule.thresholdNanoseconds
         let elapsed = nanoseconds(since: now)
-        guard elapsed(FileTimestamp(status.st_mtimespec)) > threshold,
-              elapsed(FileTimestamp(status.st_atimespec)) > threshold else { return .tooRecent }
+        guard elapsed(FileTimestamp(status.st_mtimespec)) > threshold else { return .tooRecent }
+        if case .cold = ageRule {
+            guard elapsed(FileTimestamp(status.st_atimespec)) > threshold else { return .tooRecent }
+        }
 
         // 규칙 4는 양방향이다. 디렉터리는 안의 파일 하나만 열려 있어도 통째로 지우면 안 된다.
         guard !openPaths.contains(path) else { return .inUse }
@@ -183,6 +315,22 @@ enum TempScanner {
         return .eligible
     }
 
+    /// 보존 기간(일)로 부르는 예전 형태. `.cold` 규칙으로 옮긴다.
+    static func decide(
+        stat status: stat,
+        path: String,
+        rootPaths: Set<String>,
+        openPaths: Set<String>,
+        now: Date,
+        minimumAgeDays: Int
+    ) -> Decision {
+        guard isValidMinimumAge(minimumAgeDays) else { return .invalidConfiguration }
+        return decide(
+            stat: status, path: path, rootPaths: rootPaths,
+            openPaths: openPaths, now: now, ageRule: .days(minimumAgeDays)
+        )
+    }
+
     /// 상한이 없으면 `minimumAgeDays * 86_400 * 1_000_000_000`이 Int64를 넘어 트랩한다.
     static func isValidMinimumAge(_ days: Int) -> Bool { (0 ... 100_000).contains(days) }
 
@@ -193,7 +341,7 @@ enum TempScanner {
         device: dev_t,
         openPaths: Set<String>,
         now: Date,
-        minimumAgeDays: Int,
+        ageRule: AgeRule,
         depth: Int = 0
     ) -> Bool {
         guard depth < maximumTreeDepth else { return false }
@@ -208,19 +356,39 @@ enum TempScanner {
             guard lstat(child, &status) == 0 else { return false }
             // 마운트 경계를 넘지 않는다. 넘으면 남의 볼륨 내용을 재귀 삭제하게 된다.
             guard status.st_dev == device else { return false }
+            // 에이전트 트리의 심볼릭 링크는 링크만 지운다. 따라가지 않으므로 대상은 검사할 필요가 없다 —
+            // `lstat`이라 여기 든 소유자·시각도 링크 자신의 것이다.
+            if status.st_mode & S_IFMT == S_IFLNK, ageRule.allowsSymbolicLinksInTree,
+               status.st_uid == getuid() { continue }
             // rootPaths를 비워 넘긴다. 하위 항목은 루트일 수 없다.
             guard decide(
                 stat: status, path: child, rootPaths: [],
-                openPaths: openPaths, now: now, minimumAgeDays: minimumAgeDays
+                openPaths: openPaths, now: now, ageRule: ageRule
             ) == .eligible else { return false }
 
             if status.st_mode & S_IFMT == S_IFDIR,
                !isTreeSafe(
                    at: child, device: device, openPaths: openPaths, now: now,
-                   minimumAgeDays: minimumAgeDays, depth: depth + 1
+                   ageRule: ageRule, depth: depth + 1
                ) { return false }
         }
         return true
+    }
+
+    /// 보존 기간(일)로 부르는 예전 형태.
+    static func isTreeSafe(
+        at path: String,
+        device: dev_t,
+        openPaths: Set<String>,
+        now: Date,
+        minimumAgeDays: Int,
+        depth: Int = 0
+    ) -> Bool {
+        guard isValidMinimumAge(minimumAgeDays) else { return false }
+        return isTreeSafe(
+            at: path, device: device, openPaths: openPaths, now: now,
+            ageRule: .days(minimumAgeDays), depth: depth
+        )
     }
 
     /// `Date`를 그대로 Double로 곱해 나노초를 만들면 1e18 근처에서 정밀도가 날아가
