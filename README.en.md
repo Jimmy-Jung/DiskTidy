@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.4** (2026-09-03)
+- Latest version: **1.5.5** (2026-09-03)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,20 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.5
+
+**Fixed the update check reporting a bare "update failed" when GitHub's rate limit blocked it.**
+The unauthenticated GitHub API allows 60 requests per hour per IP. Past that it returns 403, and
+the only detail shown was `HTTP 403`, which reads like a broken app — exactly what appeared right
+after installing 1.5.4 (the app checks once per launch, so repeated launches during development
+are enough to exhaust the quota).
+
+- A 403 or 429 that also carries `x-ratelimit-remaining: 0` is now read as a rate limit, and the
+  time from `x-ratelimit-reset` goes into the message — "GitHub 요청 한도를 다 썼습니다(토큰 없는
+  요청은 IP당 시간당 60회). 오후 7:01 이후 다시 확인하세요."
+- A 403 with requests still remaining stays a permission error. GitHub also returns 403 when
+  access is denied, so the status code alone does not settle it.
 
 ### What changed in 1.5.4
 
