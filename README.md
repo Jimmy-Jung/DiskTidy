@@ -75,8 +75,6 @@ macOS SSD 용량 정리 유틸리티다. 앱 캐시 · 시뮬레이터 · 빌드
 - 행 우클릭으로 **Finder에서 보기 · 경로 복사**(프로세스는 PID·실행 경로 복사, 시뮬레이터는 UDID 복사).
 - 고친 것: 개발 데몬 탭의 전체 선택이 종료할 수 없는 프로세스까지 체크해 "선택 8개 · 종료 가능 0개"가 되던 문제, 캐시데이터 탭의 수정일이 전부 비어 있던 문제, 목록이 비었을 때 빈 사각형이 화면을 덮던 문제.
 
-> 스크린샷은 1.5.1 화면이라 하단 버튼이 남아 있다. 다음 커밋에서 다시 찍는다.
-
 ### 1.5.1에서 달라진 것
 
 - **개발 데몬 탭이 활동 지표를 보인다.** 프로세스마다 시작 시각 · CPU 누적 · 마지막 활동 · 띄운 앱이 붙고, 지금 일하는 중이면 초록 배지가 뜬다 → [3.5](#35-개발-데몬-활동-지표)
@@ -110,8 +108,8 @@ macOS SSD 용량 정리 유틸리티다. 앱 캐시 · 시뮬레이터 · 빌드
 
 | | |
 |---|---|
-| **임시파일** — 안전 규칙을 통과한 항목만 올라온다<br><img src="docs/screenshots/12-temp.png" width="400" alt="임시파일 화면"> | **개발 데몬** — 시작 시각·CPU·마지막 활동·띄운 앱<br><img src="docs/screenshots/13-memory.png" width="400" alt="개발 데몬 화면"> |
-| **캐시데이터** — `~/Library/Caches` 앱별 캐시를 크기순으로<br><img src="docs/screenshots/02-cache.png" width="400" alt="캐시데이터 화면"> | **시뮬레이터** — 오래 방치된 기기가 위로<br><img src="docs/screenshots/03-simulator.png" width="400" alt="시뮬레이터 화면"> |
+| **임시파일** — 안전 규칙을 통과한 항목만, 출처별 그룹으로<br><img src="docs/screenshots/12-temp.png" width="400" alt="임시파일 화면"> | **개발 데몬** — 시작 시각·CPU·마지막 활동·띄운 앱<br><img src="docs/screenshots/13-memory.png" width="400" alt="개발 데몬 화면"> |
+| **캐시데이터** — 열 제목을 눌러 정렬, 비중 막대로 상위 항목 확인<br><img src="docs/screenshots/02-cache.png" width="400" alt="캐시데이터 화면"> | **시뮬레이터** — 오래 방치된 기기가 위로<br><img src="docs/screenshots/03-simulator.png" width="400" alt="시뮬레이터 화면"> |
 | **프로젝트 캐시** — 고른 폴더 하위 빌드 캐시 재귀 탐색<br><img src="docs/screenshots/04-project-cache.png" width="400" alt="프로젝트 캐시 화면"> | **대용량 파일** — 200MB 이상 파일 탐색<br><img src="docs/screenshots/06-big-files.png" width="400" alt="대용량 파일 화면"> |
 | **Android 캐시** — Gradle · Android Studio<br><img src="docs/screenshots/07-android-cache.png" width="400" alt="Android 캐시 화면"> | **Android 에뮬레이터** — AVD 목록<br><img src="docs/screenshots/08-android-emulator.png" width="400" alt="Android 에뮬레이터 화면"> |
 | **설정** — AI 제공자 연결과 창 동작<br><img src="docs/screenshots/14-settings.png" width="400" alt="설정 화면"> | **AI 도우미** — 오른쪽 인스펙터로 열린다<br><img src="docs/screenshots/15-chat.png" width="400" alt="AI 도우미 인스펙터"> |

@@ -80,8 +80,6 @@ The four list screens (caches · temp files · simulators · dev daemons) got a 
 - Right-click a row for **Show in Finder · Copy path** (PID and executable path for processes, UDID for simulators).
 - Fixes: the dev-daemon tab used to select processes it cannot quit, producing "8 selected · 0 quittable"; the cache tab showed no modification dates; an empty list painted a blank rectangle over the screen.
 
-> The screenshots still show the 1.5.1 layout with the bottom buttons. They will be retaken in a follow-up commit.
-
 ### What changed in 1.5.1
 
 - **The dev-daemon tab now shows activity signals.** Every process carries its start time, cumulative CPU, last activity and the app that launched it, with a green badge while it is working → [3.5](#35-dev-daemon-activity-signals)
