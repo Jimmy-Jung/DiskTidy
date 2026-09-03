@@ -31,6 +31,8 @@ struct DiskTidyApp: App {
     // 같은 폴더에 대해 요청이 계속 나간다.
     @StateObject private var explanations = ItemExplanationStore()
     @StateObject private var update = UpdateViewModel()
+    // 파일 접근 권한 상태. 실행 직후 한 번에 묻고 설정 탭이 보여 준다 — `FileAccess` 참고.
+    @StateObject private var fileAccess = FileAccessViewModel()
 
     var body: some Scene {
         // `WindowGroup`은 메뉴바의 "앱 열기"를 누를 때마다 새 창을 만든다. 탭 ViewModel은
@@ -45,6 +47,7 @@ struct DiskTidyApp: App {
                 .environmentObject(chat)
                 .environmentObject(explanations)
                 .environmentObject(update)
+                .environmentObject(fileAccess)
         }
         // 보기 메뉴에 챗봇 인스펙터 토글과 ⌃⌘I를 넣는다. 툴바 버튼만 두면
         // 키보드만 쓰는 사용자는 패널을 열 방법이 없다.

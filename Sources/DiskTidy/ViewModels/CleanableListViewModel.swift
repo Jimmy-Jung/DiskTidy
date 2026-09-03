@@ -100,7 +100,8 @@ final class CleanableListViewModel: ObservableObject {
         guard !roots.isEmpty else { return nil }
         let names = roots.map(\.lastPathComponent).joined(separator: ", ")
         return "\(names) 폴더를 읽을 권한이 없어 결과가 비어 있습니다. "
-            + "시스템 설정 > 개인정보 보호 및 보안 > 파일 및 폴더에서 DiskTidy의 접근을 허용하세요."
+            + "시스템 설정 > 개인정보 보호 및 보안 > 파일 및 폴더에서 DiskTidy의 접근을 허용하세요. "
+            + "설정 탭의 ‘파일 접근 권한’에서 전체 디스크 접근을 켜면 폴더마다 허용할 필요가 없습니다."
     }
 
     func deleteSelected() {

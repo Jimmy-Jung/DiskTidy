@@ -26,6 +26,7 @@ private let sidebarItems: [SidebarItem] = [
 struct ContentView: View {
     @EnvironmentObject private var navState: AppNavigationState
     @EnvironmentObject private var update: UpdateViewModel
+    @EnvironmentObject private var fileAccess: FileAccessViewModel
     // 사이드바 선택은 이 뷰의 `@State`로 받고 `navState`와는 `onChange`로 맞춘다.
     // `List(selection:)`을 `navState.selectedTab`(@Published)에 직접 묶으면 macOS는 클릭을 처리하는
     // 뷰 업데이트 안에서 그 값을 발행해 "Publishing changes from within view updates" 경고를 내고,
@@ -102,6 +103,11 @@ struct ContentView: View {
         // 실행할 때 한 번만 묻는다. 토큰 없는 GitHub API는 시간당 60회 제한이 있고,
         // 매번 창을 열 때마다 부를 이유도 없다.
         .task { await update.checkForUpdate() }
+        // 보호 위치(문서·다운로드·외장 볼륨 등)의 권한을 실행 직후 한 번에 묻는다. 탭마다 처음 읽는
+        // 순간 하나씩 묻게 두면 탭을 옮길 때마다 알럿이 뜬다 — `FileAccess` 주석 참고.
+        .task {
+            fileAccess.requestAtLaunch(roots: tabs.projectCacheRoots.roots + tabs.bigFileRoots.roots)
+        }
         .onChange(of: isAlwaysOnTop) { WindowPresenter.setAlwaysOnTop(isAlwaysOnTop) }
     }
 

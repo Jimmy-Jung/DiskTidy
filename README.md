@@ -206,7 +206,7 @@ codex exec --json --sandbox read-only --skip-git-repo-check --ephemeral \
 
 - macOS 14 이상
 - Xcode 26 이상 — 의존성 MarkdownView 3.0.0이 Swift tools 6.2를 요구한다 (테스트는 Swift Testing)
-- 첫 실행 시 `~/Documents`, `~/Downloads` 등 접근에 대한 macOS 파일 접근 권한(TCC) 승인 필요
+- 첫 실행 시 macOS 파일 접근 권한(TCC) 승인 필요 — 문서·다운로드 폴더와 (스캔 경로가 있으면) 데스크탑·외장 볼륨을 실행 직후 한 번에 묻는다. **설정 탭 › 파일 접근 권한**에서 전체 디스크 접근을 켜면 폴더별로 묻지 않는다.
 
 ## 실행
 
@@ -267,7 +267,7 @@ xattr -dr com.apple.quarantine /Applications/DiskTidy.app
 codesign -dv --verbose=4 /Applications/DiskTidy.app
 ```
 
-빌드마다 ad-hoc 서명이 새로 생성되므로, 재설치 후 macOS가 폴더 접근 권한(TCC)을 다시 물어볼 수 있다.
+빌드마다 ad-hoc 서명이 새로 생성되므로, 재설치 후 macOS가 폴더 접근 권한(TCC)을 다시 물어볼 수 있다. 전체 디스크 접근은 다시 묻지 않고 조용히 풀리므로, 업데이트 뒤 목록이 비면 **설정 탭 › 파일 접근 권한**에서 상태를 확인하고 시스템 설정에서 다시 켠다.
 
 **포크한다면:** `Info.plist`의 `CFBundleIdentifier`(`com.jimmy.disktidy`)와 `TrashService`·`PermanentDeleter`·`TempCleanupViewModel`의 로거 subsystem을 본인 것으로 바꿀 것. 공증까지 하려면 Apple Developer Program($99/년) 가입 후 `codesign --options runtime --sign "Developer ID Application: ..."` + `xcrun notarytool submit`이 필요하다.
 

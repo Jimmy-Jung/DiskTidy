@@ -3,6 +3,7 @@ import SwiftUI
 /// AI Agent 제공자 연결 설정. 값은 제공자별로 저장되고 API 키만 키체인으로 간다.
 struct SettingsTabView: View {
     @EnvironmentObject private var settings: AISettingsViewModel
+    @EnvironmentObject private var fileAccess: FileAccessViewModel
 
     /// 목록에 없는 모델(사내 게이트웨이·프리뷰 등)을 쓰려면 직접 입력으로 빠져나간다.
     @State private var entersModelManually = false
@@ -84,8 +85,64 @@ struct SettingsTabView: View {
         )
     }
 
+    /// 파일 접근 권한. macOS는 앱이 권한을 스스로 켤 수 없게 하므로 토글이 아니라 상태 + 버튼이다.
+    /// 실행 직후 `FileAccessViewModel.requestAtLaunch`가 한 번에 묻고, 여기서는 결과를 보여 주며
+    /// 다시 묻거나 시스템 설정으로 보낸다.
+    @ViewBuilder
+    private var fileAccessSection: some View {
+        Section("파일 접근 권한") {
+            LabeledContent("전체 디스크 접근") {
+                HStack(spacing: 8) {
+                    accessStatus(fullDisk: fileAccess.hasFullDiskAccess)
+                    Button("시스템 설정 열기") { fileAccess.openFullDiskAccessSettings() }
+                }
+            }
+            Text("""
+            한 번 허용하면 폴더·외장 디스크마다 따로 묻지 않습니다. 시스템 설정 목록에 DiskTidy가 없으면 \
+            + 버튼으로 /Applications/DiskTidy.app을 추가하세요. 이 앱은 ad-hoc 서명이라 업데이트 뒤에는 \
+            다시 허용해야 할 수 있습니다.
+            """)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+            ForEach(ProtectedLocation.allCases) { location in
+                LabeledContent(location.label) {
+                    accessStatus(fileAccess.states[location] ?? .unknown)
+                }
+            }
+            HStack {
+                Button("폴더 접근 한 번에 요청") { fileAccess.requestAll() }
+                    .disabled(fileAccess.isRequesting || fileAccess.hasFullDiskAccess == true)
+                if fileAccess.isRequesting { ProgressView().controlSize(.small) }
+                Button("파일 및 폴더 설정 열기") { fileAccess.openFilesAndFoldersSettings() }
+            }
+            Text("""
+            아직 묻지 않은 위치는 여기서 한 번에 묻습니다. 이미 거부한 위치는 macOS가 다시 묻지 않으므로 \
+            시스템 설정 > 개인정보 보호 및 보안 > 파일 및 폴더에서 직접 켜야 합니다.
+            """)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func accessStatus(fullDisk: Bool?) -> some View {
+        accessStatus(fullDisk.map { $0 ? AccessState.granted : .denied } ?? .unknown)
+    }
+
+    private func accessStatus(_ state: AccessState) -> some View {
+        let (text, color): (String, Color) = switch state {
+        case .granted: ("허용됨", .green)
+        case .denied: ("허용 안 됨", .orange)
+        case .unknown: ("미확인", .secondary)
+        case .notApplicable: ("해당 없음", .secondary)
+        }
+        return Text(text).font(.callout).foregroundStyle(color)
+    }
+
     var body: some View {
         Form {
+            fileAccessSection
+
             Section("AI Agent 제공자") {
                 Picker("제공자", selection: $settings.provider) {
                     // 로컬 CLI 제공자는 켜지 않으면 목록에 없다.
@@ -167,6 +224,8 @@ struct SettingsTabView: View {
         .formStyle(.grouped)
         // 키체인 읽기는 앱 시작이 아니라 이 화면이 보인 뒤에 한다.
         .task {
+            // 전체 디스크 접근은 묻지 않고 확인만 한다. 폴더별 상태는 실행 직후 일괄 요청이 채운다.
+            fileAccess.refreshFullDiskAccess()
             await settings.loadKeyIfNeeded()
             // 키가 채워진 뒤에야 목록을 물어볼 수 있다.
             if settings.availableModels.isEmpty, settings.canListModels {

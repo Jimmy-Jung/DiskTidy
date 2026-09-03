@@ -34,6 +34,11 @@
     <string>선택한 프로젝트 폴더의 빌드 캐시를 찾아 정리하기 위해 접근 권한이 필요합니다.</string>
     <key>NSDesktopFolderUsageDescription</key>
     <string>데스크탑을 스캔 대상으로 지정한 경우 대용량 파일을 찾기 위해 접근 권한이 필요합니다.</string>
+    <!-- DerivedData를 외장 SSD로 빼 둔 구성이 흔하다. Xcode 캐시 탭이 첫 실행에 이 권한을 묻는다. -->
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>외장 디스크에 둔 DerivedData·프로젝트 폴더의 캐시를 찾아 정리하기 위해 접근 권한이 필요합니다.</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>네트워크 볼륨을 스캔 대상으로 지정한 경우 그 안의 파일을 찾기 위해 접근 권한이 필요합니다.</string>
     <!-- OpenAI 호환 제공자를 로컬 모델 서버(http://localhost:*)로 가리킬 수 있다.
          ATS 전체를 열지 않고 로컬 네트워킹만 허용한다. 원격 평문 http는
          AIRequestBuilder가 따로 막는다. -->
