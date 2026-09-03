@@ -24,6 +24,8 @@ enum ProcessScanner {
     struct Probe {
         var identity: @Sendable (Int32) -> ProcessIdentity?
         var arguments: @Sendable (Int32) -> [String]?
+        /// 활동 지표. 표시 전용이라 못 읽어도 스캔은 계속한다.
+        var usage: @Sendable (Int32) -> ProcessUsage? = { systemUsage($0) }
 
         static let system = Probe(
             identity: { systemIdentity($0) },
@@ -59,10 +61,18 @@ enum ProcessScanner {
                 residentBytes: row.residentKB * 1024,
                 arguments: arguments,
                 displayName: identity.executableName,
-                kind: kind
+                kind: kind,
+                usage: probe.usage(row.pid)
             )
         }
         return .success(processes.sorted { $0.residentBytes > $1.residentBytes })
+    }
+
+    /// 목록에 있는 프로세스의 활동 지표만 다시 읽는다(5초마다). `ps`를 다시 돌리지 않는다.
+    /// PID가 그 사이 재사용됐으면 nil — 다른 프로세스의 CPU를 이 데몬의 활동으로 적으면 안 된다.
+    static func sampleUsage(of identity: ProcessIdentity, probe: Probe = .system) -> ProcessUsage? {
+        guard probe.identity(identity.pid) == identity else { return nil }
+        return probe.usage(identity.pid)
     }
 
     /// `/bin/ps -o pid=,rss=` 출력. `rss`는 KB 단위다.
@@ -131,7 +141,7 @@ enum ProcessScanner {
         if identity.executableName == "node", isMCPServerEntryPoint(arguments) {
             return .activeWorkload("MCP 서버")
         }
-        if let label = activeWorkloadLabel(for: identity) {
+        if let label = activeWorkloadLabel(for: identity, arguments: arguments) {
             return .activeWorkload(label)
         }
         return .userApp
@@ -147,7 +157,11 @@ enum ProcessScanner {
     }
 
     /// 상태만 보여 주고 이 탭에서는 종료하지 않는 작업들.
-    private static func activeWorkloadLabel(for identity: ProcessIdentity) -> String? {
+    ///
+    /// `dart`는 하위 명령이 정체다. 한 머신에 `dart` 열댓 개가 뜨는데 대부분 에이전트 세션마다 하나씩
+    /// 붙는 `dart mcp-server`고, 나머지는 VS Code Dart 확장의 분석 서버·도구 데몬이다(실측).
+    /// 전부 "Dart/Flutter"로 뭉치면 사용자는 자기가 안 하는 Flutter 작업이 도는 줄 안다.
+    static func activeWorkloadLabel(for identity: ProcessIdentity, arguments: [String]) -> String? {
         if identity.executablePath.contains("/CoreSimulator/") {
             return "시뮬레이터 런타임"
         }
@@ -157,12 +171,33 @@ enum ProcessScanner {
         // Xcode 앱 본체는 빌드 작업이 아니라 에디터다. 목록에 넣으면 노이즈만 는다.
         case "XCBBuildService", "xcodebuild":
             return "Xcode 빌드"
-        case "dart", "flutter", "flutter_tools":
-            return "Dart/Flutter"
-        case "qemu-system-aarch64", "qemu-system-x86_64", "emulator", "adb":
+        case "dart":
+            return dartLabel(arguments: arguments)
+        case "dartvm":
+            return "Dart VM"
+        case "flutter", "flutter_tools":
+            return "Flutter 도구"
+        // adb는 에뮬레이터가 아니라 기기·에뮬레이터와 통신하는 서버다. Flutter 도구가 기기 검색을 위해
+        // 한 번 띄우면 분리돼 상주한다.
+        case "adb":
+            return "adb 서버 (Android 디버그 브리지)"
+        case "qemu-system-aarch64", "qemu-system-x86_64", "emulator":
             return "Android 에뮬레이터"
         default:
             return nil
+        }
+    }
+
+    /// `dart <하위 명령> …`. 첫 비옵션 인자가 하위 명령이다.
+    private static func dartLabel(arguments: [String]) -> String {
+        let subcommand = arguments.dropFirst().first { !$0.hasPrefix("-") } ?? ""
+        switch subcommand {
+        case "mcp-server": return "MCP 서버"
+        case "language-server", "analysis_server": return "Dart 분석 서버"
+        case "tooling-daemon": return "Dart 도구 데몬"
+        case "devtools": return "Dart DevTools"
+        case "run", "": return "Dart/Flutter"
+        default: return "Dart \(subcommand)"
         }
     }
 
@@ -191,6 +226,81 @@ enum ProcessScanner {
             ),
             executablePath: path
         )
+    }
+
+    /// `proc_taskinfo`(CPU 누적·실행 중 스레드) + `proc_pid_rusage`(디스크 I/O) + 부모 pid.
+    /// 시간 값은 mach 절대 시간 단위라 timebase로 초로 바꾼다 — Apple Silicon에서는 ns가 아니다(125/3).
+    private static func systemUsage(_ pid: Int32) -> ProcessUsage? {
+        var task = proc_taskinfo()
+        let taskSize = Int32(MemoryLayout<proc_taskinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task, taskSize) == taskSize else { return nil }
+
+        var bsd = proc_bsdinfo()
+        let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, bsdSize) == bsdSize else { return nil }
+
+        var rusage = rusage_info_v4()
+        let hasRusage = withUnsafeMutablePointer(to: &rusage) { pointer in
+            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+                proc_pid_rusage(pid, RUSAGE_INFO_V4, $0) == 0
+            }
+        }
+        let diskBytes = hasRusage
+            ? Int64(clamping: rusage.ri_diskio_bytesread &+ rusage.ri_diskio_byteswritten)
+            : 0
+
+        let parentPID = Int32(bitPattern: bsd.pbi_ppid)
+        return ProcessUsage(
+            cpuSeconds: machSeconds(task.pti_total_user &+ task.pti_total_system),
+            diskBytes: diskBytes,
+            runningThreads: Int(task.pti_numrunning),
+            parentPID: parentPID,
+            parentExecutablePath: executablePath(of: parentPID),
+            parentProcessName: processName(of: parentPID)
+        )
+    }
+
+    /// `pbi_name`(긴 이름), 비어 있으면 `pbi_comm`(16자). 둘 다 고정 길이 C 문자열 튜플이다.
+    private static func processName(of pid: Int32) -> String? {
+        guard pid > 0 else { return nil }
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        // 튜플을 지역 상수로 복사한다. `&info.pbi_name`을 넘기면서 클로저 안에서 `info`를 읽으면
+        // 배타 접근 위반이다.
+        let nameTuple = info.pbi_name
+        let name = withUnsafePointer(to: nameTuple) {
+            $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: nameTuple)) {
+                String(cString: $0)
+            }
+        }
+        if !name.isEmpty { return name }
+        let commTuple = info.pbi_comm
+        let comm = withUnsafePointer(to: commTuple) {
+            $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: commTuple)) {
+                String(cString: $0)
+            }
+        }
+        return comm.isEmpty ? nil : comm
+    }
+
+    private static let machTimebase: (numerator: Double, denominator: Double) = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return (Double(info.numer), Double(max(info.denom, 1)))
+    }()
+
+    static func machSeconds(_ ticks: UInt64) -> TimeInterval {
+        Double(ticks) * machTimebase.numerator / machTimebase.denominator / 1_000_000_000
+    }
+
+    private static func executablePath(of pid: Int32) -> String? {
+        guard pid > 0 else { return nil }
+        // Swift importer가 `PROC_PIDPATHINFO_MAXSIZE` 매크로를 노출하지 않는다.
+        var buffer = [CChar](repeating: 0, count: 4 * Int(PATH_MAX))
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+        let path = String(cString: buffer)
+        return path.hasPrefix("/") ? path : nil
     }
 
     private static func systemArguments(_ pid: Int32) -> [String]? {

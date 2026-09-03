@@ -206,6 +206,18 @@ private struct SwapSection: View {
 private struct ProcessList: View {
     @ObservedObject var viewModel: MemoryViewModel
 
+    /// 행마다 `Date()`를 부르지 않는다. 목록은 5초마다 다시 그려지므로 그 시점 하나로 충분하다.
+    private var now: Date { Date() }
+
+    /// "활동 중"은 초록, 유휴는 회색. 관찰 기반 값이라 탭을 처음 열면 "관찰 중"부터 시작한다.
+    @ViewBuilder
+    private func activityBadge(_ activity: ProcessActivity?) -> some View {
+        let text = activity?.statusString(now: now) ?? "관찰 전"
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(activity?.isActiveNow == true ? Color.green : Color.secondary)
+    }
+
     var body: some View {
         List {
             // 인덱스 바인딩(`ForEach($processes)`)은 목록이 줄면 죽는다 — `Binding.field` 주석 참고.
@@ -221,16 +233,18 @@ private struct ProcessList: View {
 
                     VStack(alignment: .leading) {
                         Text("\(process.displayName) · PID \(process.identity.pid)")
-                        Text(process.kind.label)
+                        Text("\(process.kind.label) · \(process.isTerminable ? "종료 가능" : "표시만")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        // 시작 시각·CPU·띄운 앱. "며칠째 떠 있는 데몬"과 "누가 띄웠나"가 종료 판단의 근거다.
+                        Text(process.detailLine(now: now))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     VStack(alignment: .trailing) {
                         Text(process.residentString).monospacedDigit()
-                        Text(process.isTerminable ? "종료 가능" : "표시만")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        activityBadge(process.activity)
                     }
                     ExplanationButton(
                         subject: ExplanationSubject(
@@ -243,6 +257,8 @@ private struct ProcessList: View {
                                 "항목: 실행 중인 프로세스 \(process.displayName)",
                                 "분류: \(process.kind.label)",
                                 "메모리(RSS 근사치): \(process.residentString)",
+                                process.detailLine(now: now),
+                                "활동: \(process.activity?.statusString(now: now) ?? "관찰 전")",
                                 process.isTerminable
                                     ? "이 화면의 정리 방식: SIGTERM·SIGKILL로 종료 (되돌릴 수 없음, 도구가 다시 띄울 수 있음)"
                                     : "이 화면에서는 종료할 수 없고 표시만 한다",

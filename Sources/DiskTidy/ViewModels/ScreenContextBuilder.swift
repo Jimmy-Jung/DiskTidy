@@ -181,12 +181,15 @@ enum ScreenContextBuilder {
             "프로세스 \(viewModel.processes.count)개 (선택 \(viewModel.selectedCount)개, "
                 + "종료 가능 \(viewModel.terminableSelection.count)개)"
         )
+        lines.append("활동 표시는 관찰 기반이다 — 탭이 보이는 동안 CPU·디스크 누적치가 늘었는지로 판단한다.")
+        let now = Date()
         lines += itemLines(
             viewModel.processes.map {
                 Row(
                     name: "\($0.displayName) · PID \($0.identity.pid)",
                     sizeBytes: $0.residentBytes,
-                    detail: "\($0.kind.label) · \($0.isTerminable ? "종료 가능" : "표시만")",
+                    detail: "\($0.kind.label) · \($0.isTerminable ? "종료 가능" : "표시만") · "
+                        + "\($0.detailLine(now: now)) · \($0.activity?.statusString(now: now) ?? "관찰 전")",
                     isSelected: $0.isSelected
                 )
             }

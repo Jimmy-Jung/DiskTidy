@@ -25,7 +25,11 @@ final class MemoryViewModel: ObservableObject {
     private let readSwap: @Sendable () -> Result<SwapSnapshot, MemoryInfo.Error>
     private let readSwapFiles: @Sendable () -> Result<Int64, MemoryInfo.Error>
     private let scanProcesses: @Sendable () -> Result<[RunningProcess], ProcessScanner.Error>
+    private let sampleUsage: @Sendable (ProcessIdentity) -> ProcessUsage?
     private let terminate: @Sendable (RunningProcess) -> ProcessTerminator.Outcome
+
+    /// identity별 관찰 기록. 목록이 갱신돼도 같은 프로세스면 이어 간다 — "유휴 40분"은 여기서 나온다.
+    private var activityLog: [ProcessIdentity: ProcessActivity] = [:]
 
     /// timer는 하나만 소유한다. 지표 주기마다 깨어나고 그중 N번째에만 목록을 다시 읽는다.
     private var timer: Timer?
@@ -53,6 +57,9 @@ final class MemoryViewModel: ObservableObject {
         scanProcesses: @escaping @Sendable () -> Result<[RunningProcess], ProcessScanner.Error> = {
             ProcessScanner.scan()
         },
+        sampleUsage: @escaping @Sendable (ProcessIdentity) -> ProcessUsage? = {
+            ProcessScanner.sampleUsage(of: $0)
+        },
         terminate: @escaping @Sendable (RunningProcess) -> ProcessTerminator.Outcome = {
             ProcessTerminator.terminate($0)
         }
@@ -61,6 +68,7 @@ final class MemoryViewModel: ObservableObject {
         self.readSwap = readSwap
         self.readSwapFiles = readSwapFiles
         self.scanProcesses = scanProcesses
+        self.sampleUsage = sampleUsage
         self.terminate = terminate
 
         self.metricsInterval = metricsInterval
@@ -115,9 +123,40 @@ final class MemoryViewModel: ObservableObject {
     private func tick() {
         refreshMetrics()
         ticksSinceProcessRefresh += 1
-        guard ticksSinceProcessRefresh >= processRefreshTickCount else { return }
+        guard ticksSinceProcessRefresh >= processRefreshTickCount else {
+            // 목록은 20초마다지만 활동 표본은 5초마다 갱신한다. `ps` 없이 syscall만 돈다.
+            refreshActivity()
+            return
+        }
         ticksSinceProcessRefresh = 0
         refreshProcesses()
+    }
+
+    /// 목록에 있는 프로세스의 활동 표본만 다시 읽어 관찰 기록을 잇는다.
+    func refreshActivity() {
+        guard !isWorking, !processes.isEmpty else { return }
+        let identities = processes.map(\.identity)
+        let sampleUsage = self.sampleUsage
+        // 표본 시각은 채취 **전에** 잡는다. 완료 시각으로 적으면, 그 사이 목록 갱신이 더 새 표본을
+        // 기록했을 때 옛 표본이 새 시각을 달고 덮어써 다음 관찰에서 헛 "활동 중"이 뜬다.
+        let sampledAt = Date()
+        Task {
+            let samples = await Task.detached(priority: .utility) {
+                identities.map { ($0, sampleUsage($0)) }
+            }.value
+            // 갱신 사이에 목록이 바뀌었을 수 있다. identity로 찾아 넣고, 한 번에 대입해 발행을 한 번으로 줄인다.
+            var updated = self.processes
+            for (identity, usage) in samples {
+                guard let usage, let index = updated.firstIndex(where: { $0.identity == identity }) else { continue }
+                // 더 새 관찰이 이미 있으면 이 표본은 낡았다. 버린다.
+                if let previous = activityLog[identity], previous.observedAt >= sampledAt { continue }
+                let activity = ProcessActivity.observe(previous: activityLog[identity], current: usage, now: sampledAt)
+                activityLog[identity] = activity
+                updated[index].usage = usage
+                updated[index].activity = activity
+            }
+            self.processes = updated
+        }
     }
 
     /// 세 지표는 서로 독립이다. 하나가 실패해도 나머지는 계속 표시한다.
@@ -156,11 +195,22 @@ final class MemoryViewModel: ObservableObject {
             case .success(let scanned):
                 // 갱신 사이에도 체크 상태는 유지한다. identity가 같은 것만 이어 받는다.
                 let selected = Set(self.processes.filter(\.isSelected).map(\.identity))
+                let now = Date()
+                var log: [ProcessIdentity: ProcessActivity] = [:]
                 self.processes = scanned.map { process in
                     var updated = process
                     updated.isSelected = selected.contains(process.identity)
+                    if let usage = process.usage {
+                        let activity = ProcessActivity.observe(
+                            previous: self.activityLog[process.identity], current: usage, now: now
+                        )
+                        log[process.identity] = activity
+                        updated.activity = activity
+                    }
                     return updated
                 }
+                // 사라진 프로세스의 기록은 버린다. PID가 재사용돼도 identity(시작 시각)가 달라 섞이지 않는다.
+                self.activityLog = log
             case .failure(let error):
                 // 스캔이 실패하면 이전 목록의 identity를 더 이상 보증할 수 없다.
                 // 남겨 두면 검증되지 않은 대상에 종료 버튼이 열린다.

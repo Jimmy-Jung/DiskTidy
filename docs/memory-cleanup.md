@@ -357,6 +357,23 @@ enum ProcessScanner {
 
 `TerminationPolicy`는 `.devDaemon` 분류 외에 현재 UID·PID 1·DiskTidy 자신·부모·시스템 차단 경로·차단 이름을 모두 확인한다. 이 조건은 목록 표시를 위한 `.protected` 분류와 별개로, UI와 실제 시그널 전송이 공통으로 통과해야 하는 최종 게이트다.
 
+### 4.x 활동 지표 (2026-09-03 추가)
+
+"이 데몬 지금 쓰는 건가, 마지막으로 언제 일했나"를 목록에 보인다. OS에 "마지막 사용" 값은 없으므로 관찰로 만든다.
+
+| 지표 | 출처 | 비고 |
+|---|---|---|
+| 시작 시각·실행 기간 | 이미 있던 `identity.startTime` | 며칠째 떠 있는 데몬 식별 |
+| CPU 누적 | `proc_pidinfo(PROC_PIDTASKINFO)` `pti_total_user+system` | mach 단위 → timebase로 초 환산(Apple Silicon 125/3) |
+| 디스크 I/O 누적 | `proc_pid_rusage(RUSAGE_INFO_V4)` | CPU 안 써도 I/O 하면 활동 |
+| 실행 중 스레드 | `pti_numrunning` | 첫 관찰의 유일한 판단 근거 |
+| 띄운 앱 | `pbi_ppid` → `proc_pidpath` → 첫 `.app` 이름 | ppid 1이면 독립 실행(데몬이 분리) |
+
+- **활동 판정**: 관찰 간격 대비 CPU 2% 이상(20초에 0.4초) 또는 디스크 1MB 이상 또는 실행 중 스레드 > 0. 2% 아래는 유휴 JVM의 GC·JIT 잡음이다.
+- **마지막 활동**: 위 판정이 참이었던 마지막 관찰 시각. 뷰모델이 identity별로 기억하며 목록이 갱신돼도 같은 프로세스면 이어 간다. 탭이 보이는 동안(5초 표본, 20초 목록)만 쌓이므로 처음 열면 "관찰 중"으로 시작한다 — 문구에 관찰 기반임을 남긴다.
+- `ps`의 상태 문자 `I`(20초 이상 유휴)는 **쓰지 않는다**. 실측으로 3시간 유휴 데몬도 전부 `S`였다.
+- 활동 표본은 `ps`를 다시 돌리지 않고 목록의 pid에 syscall만 한다. PID 재사용에 대비해 표본 전에 identity(시작 시각)를 다시 비교한다.
+
 ## 5. RSS는 근사치다 — UI에 명시할 것
 
 `ps`의 RSS는 Apple Silicon에서 실제 메모리 사용량과 다르다.

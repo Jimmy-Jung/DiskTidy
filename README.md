@@ -41,7 +41,7 @@ macOS SSD 용량 정리 유틸리티. 캐시·시뮬레이터·빌드 캐시·�
 | Android 캐시 | Gradle 캐시/배포판, `~/.android` 캐시, Android Studio IDE 캐시 |
 | Android 에뮬레이터 | `~/.android/avd`의 AVD 목록, 삭제 시 `.ini` 포인터까지 정리 |
 | 임시파일 | `/private/tmp` · `$TMPDIR`의 최상위 항목 (안전 규칙과 관측 한계는 아래) |
-| 개발 데몬 | 메모리·스왑 지표, 장기 실행 개발 데몬(Gradle · Kotlin) 종료 |
+| 개발 데몬 | 메모리·스왑 지표, 장기 실행 개발 데몬(Gradle · Kotlin) 종료. 프로세스마다 시작 시각·CPU 누적·마지막 활동·띄운 앱을 보인다 |
 | 패키지 캐시 | npm · pnpm · Bun · Yarn · CocoaPods · SwiftPM · Carthage · pip · uv · Cargo · Homebrew 전역 캐시 (집는 경로는 아래) |
 | 설정 | AI 제공자 연결(제공자 · API 루트 URL · 모델 · API 키), 로컬 CLI 제공자 옵트인, 창 동작(항상 위), 개발자 문의(GitHub 이슈 · 메일) |
 

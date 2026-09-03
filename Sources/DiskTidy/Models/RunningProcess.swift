@@ -72,6 +72,125 @@ struct ProcessIdentity: Hashable {
     }
 }
 
+/// 한 시점의 활동 지표. 전부 누적값이라 두 관찰의 **차이**로만 "지금 활동 중"을 알 수 있다.
+struct ProcessUsage: Hashable {
+    /// 사용자+시스템 CPU 누적 시간(초). `proc_taskinfo`의 mach 단위를 timebase로 환산한 값.
+    let cpuSeconds: TimeInterval
+    /// 디스크 읽기+쓰기 누적 바이트(`proc_pid_rusage`). 못 읽으면 0.
+    let diskBytes: Int64
+    /// 지금 이 순간 실행 중인 스레드 수. 0이 아니면 관찰 간격과 무관하게 활동 중이다.
+    let runningThreads: Int
+    let parentPID: Int32
+    /// 부모의 실행 파일 경로. 부모가 이미 죽었으면 nil.
+    let parentExecutablePath: String?
+    /// 부모의 프로세스 이름(`pbi_name`). 실행 파일 이름이 버전 번호인 경우가 있어 경로만으로는 모른다 —
+    /// Claude Code 네이티브 바이너리는 `~/.local/share/claude/versions/2.1.259`다(실측: "띄운 앱: 2.1.259").
+    var parentProcessName: String? = nil
+
+    /// "띄운 앱". launchd가 부모면 독립 실행(데몬이 스스로 분리한 것)이다.
+    var parentDisplayName: String {
+        if parentPID == 1 { return "없음 (launchd · 독립 실행)" }
+        guard parentExecutablePath != nil || parentProcessName != nil else { return "부모 종료됨" }
+        if let parentExecutablePath, parentExecutablePath.contains(".app/") {
+            return Self.appName(forExecutablePath: parentExecutablePath)
+        }
+        let name = parentProcessName
+            ?? parentExecutablePath.map { URL(fileURLWithPath: $0).lastPathComponent }
+            ?? "?"
+        return Self.agentName(name)
+    }
+
+    /// 에이전트 CLI는 실행 파일 이름보다 제품 이름이 낫다. 모르는 이름은 그대로 둔다.
+    static func agentName(_ processName: String) -> String {
+        switch processName {
+        case "claude": return "Claude Code"
+        case "codex": return "Codex"
+        default: return processName
+        }
+    }
+
+    /// 헬퍼 프로세스는 이름이 길고 낯설다(`Code Helper (Plugin)`). 경로의 **첫** `.app` 이름이 사용자가
+    /// 아는 앱이다 — `/Applications/Visual Studio Code.app/…/Code Helper (Plugin).app/…` → "Visual Studio Code".
+    static func appName(forExecutablePath path: String) -> String {
+        if let appRange = path.range(of: ".app/") {
+            let prefix = path[..<appRange.lowerBound]
+            if let slash = prefix.lastIndex(of: "/") { return String(prefix[prefix.index(after: slash)...]) }
+        }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+}
+
+/// 폴링을 이어 가며 얻은 관찰 결과.
+///
+/// OS에 "마지막 사용" 같은 값은 없다. CPU·I/O 누적치가 마지막으로 늘어난 관찰 시각을 기억하는 것뿐이라
+/// 탭이 보이는 동안만 쌓인다(뷰모델은 창 수명이라 탭을 오가도 유지된다). `ps`의 상태 문자 `I`(20초
+/// 이상 유휴)는 쓰지 않는다 — 실측으로 3시간 유휴 데몬도 전부 `S`였다.
+struct ProcessActivity: Hashable {
+    /// 이 이하로 CPU를 쓰는 것은 활동으로 치지 않는다. 유휴 JVM도 GC·JIT 정리로 관찰 간격당 수십 ms를
+    /// 쓴다(실측). 관찰 간격 대비 2%(20초에 0.4초)면 실제 작업이다.
+    static let activeCPUShare = 0.02
+    /// 이 이상 디스크를 읽고 썼으면 CPU를 안 써도 활동이다.
+    static let activeDiskBytes: Int64 = 1_048_576
+
+    let firstObserved: Date
+    let observedAt: Date
+    let usage: ProcessUsage
+    /// 누적치가 마지막으로 늘었거나 실행 중 스레드가 있던 관찰 시각. nil이면 관찰 뒤 아직 변화 없음.
+    let lastActive: Date?
+    /// 직전 관찰 대비 활동이 있었는지.
+    let isActiveNow: Bool
+
+    /// 새 표본을 반영한다. 첫 관찰은 실행 중 스레드로만 판단한다 — 비교할 이전 값이 없다.
+    static func observe(previous: ProcessActivity?, current: ProcessUsage, now: Date) -> ProcessActivity {
+        var active = current.runningThreads > 0
+        if let previous {
+            let interval = now.timeIntervalSince(previous.observedAt)
+            if interval > 0 {
+                // 같은 identity의 누적치는 줄지 않는다. 음수가 보이면 표본 순서가 어긋난 것이니 0으로 본다.
+                let cpuDelta = max(0, current.cpuSeconds - previous.usage.cpuSeconds)
+                let diskDelta = max(0, current.diskBytes - previous.usage.diskBytes)
+                if cpuDelta / interval >= activeCPUShare || diskDelta >= activeDiskBytes { active = true }
+            }
+        }
+        return ProcessActivity(
+            firstObserved: previous?.firstObserved ?? now,
+            observedAt: now,
+            usage: current,
+            lastActive: active ? now : previous?.lastActive,
+            isActiveNow: active
+        )
+    }
+
+    /// "활동 중" / "유휴 12분" / "관찰 중" / "관찰 40분 동안 활동 없음".
+    func statusString(now: Date) -> String {
+        if isActiveNow { return "활동 중" }
+        if let lastActive { return "유휴 \(DurationText.short(now.timeIntervalSince(lastActive)))" }
+        let watched = now.timeIntervalSince(firstObserved)
+        return watched < 60 ? "관찰 중" : "관찰 \(DurationText.short(watched)) 동안 활동 없음"
+    }
+}
+
+/// 사람이 읽는 기간. 초 단위 정밀도는 여기서 필요 없다.
+enum DurationText {
+    static func short(_ seconds: TimeInterval) -> String {
+        let total = Int(max(0, seconds))
+        if total < 60 { return "1분 미만" }
+        let days = total / 86_400, hours = total % 86_400 / 3600, minutes = total % 3600 / 60
+        if days > 0 { return hours > 0 ? "\(days)일 \(hours)시간" : "\(days)일" }
+        if hours > 0 { return minutes > 0 ? "\(hours)시간 \(minutes)분" : "\(hours)시간" }
+        return "\(minutes)분"
+    }
+
+    /// CPU 누적은 작은 값이 많아 초 아래도 보인다.
+    static func cpu(_ seconds: TimeInterval) -> String {
+        let clamped = max(0, seconds)
+        if clamped < 60 { return String(format: "%.1f초", clamped) }
+        let total = Int(clamped)
+        if total < 3600 { return "\(total / 60)분 \(total % 60)초" }
+        return "\(total / 3600)시간 \(total % 3600 / 60)분"
+    }
+}
+
 struct RunningProcess: Identifiable, Hashable {
     let id: Int32                          // identity.pid
     let identity: ProcessIdentity
@@ -80,13 +199,18 @@ struct RunningProcess: Identifiable, Hashable {
     let displayName: String                // 표시용; 종료 정책에는 쓰지 않음
     let kind: ProcessKind
     var isSelected = false
+    /// 스캔 시점 표본. 못 읽었으면 nil(표시만 빠진다).
+    var usage: ProcessUsage?
+    /// 뷰모델이 폴링을 이어 가며 채운다. 종료 정책과 무관한 표시 정보다.
+    var activity: ProcessActivity?
 
     init(
         identity: ProcessIdentity,
         residentBytes: Int64,
         arguments: [String],
         displayName: String,
-        kind: ProcessKind
+        kind: ProcessKind,
+        usage: ProcessUsage? = nil
     ) {
         id = identity.pid
         self.identity = identity
@@ -94,7 +218,41 @@ struct RunningProcess: Identifiable, Hashable {
         self.arguments = arguments
         self.displayName = displayName
         self.kind = kind
+        self.usage = usage
     }
+
+    var startDate: Date {
+        Date(timeIntervalSince1970:
+            Double(identity.startTime.seconds) + Double(identity.startTime.microseconds) / 1_000_000)
+    }
+
+    /// "시작 09:36 (3시간 12분 전) · CPU 28.8초 · 띄운 앱: Visual Studio Code". 상태는 따로 배지로 보인다.
+    func detailLine(now: Date) -> String {
+        var parts = ["시작 \(Self.startText(startDate, now: now)) (\(DurationText.short(now.timeIntervalSince(startDate))) 전)"]
+        if let usage {
+            parts.append("CPU \(DurationText.cpu(usage.cpuSeconds))")
+            parts.append("띄운 앱: \(usage.parentDisplayName)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// 오늘 시작했으면 시각만, 아니면 날짜도. "며칠째 떠 있는 데몬"이 한눈에 보여야 한다.
+    private static func startText(_ start: Date, now: Date) -> String {
+        let formatter = Calendar.current.isDate(start, inSameDayAs: now) ? clockFormatter : dayClockFormatter
+        return formatter.string(from: start)
+    }
+
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    private static let dayClockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter
+    }()
 
     var isTerminable: Bool {
         TerminationPolicy.canTerminate(
