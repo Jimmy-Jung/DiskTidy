@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.6** (2026-09-04)
+- Latest version: **1.5.7** (2026-09-04)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,17 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.7
+
+**The installed version is now visible inside the app.** DiskTidy is an `LSUIElement` app with no Dock
+icon and no app menu, so there was no standard "About DiskTidy" to reach - and no place anywhere in the
+app that showed which version was running.
+
+- The sidebar always shows the running version at the bottom, just above the update button. It is
+  visible from any tab and can be selected and copied.
+- The "Contact the developer" section in Settings gained a current-version row. Mail inquiries already
+  get the version in the subject line, but GitHub issues have to be filled in by hand.
 
 ### What changed in 1.5.6
 
