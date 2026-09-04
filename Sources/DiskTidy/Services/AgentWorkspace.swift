@@ -127,7 +127,7 @@ enum AgentWorkspace {
         return "\(trimmed) · \(sessionID.prefix(8))"
     }
 
-    /// 사용 중이라 지울 수 없는 이유. nil이면 규칙 판정으로 넘어간다.
+    /// 사용 중 경고 이유. nil이면 규칙 판정으로 넘어간다.
     static func blockingReason(
         for kind: TempCandidateKind, path: String, live: LiveAgentState
     ) -> String? {

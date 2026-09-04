@@ -15,6 +15,7 @@ struct TempTabView: View {
     enum SortKey { case name, modified, size }
 
     private var selectedCount: Int { viewModel.selectedItems.count }
+    private var selectedInUseCount: Int { viewModel.selectedItems.filter(\.isInUse).count }
 
     /// 검색으로 걸러 남은 항목. 선택·전체 선택·머리글 상태는 모두 이 목록을 기준으로 센다.
     private var visibleItems: [TempCandidate] {
@@ -26,8 +27,7 @@ struct TempTabView: View {
         }
     }
 
-    /// 사용 중인 행은 체크할 수 없으므로 전체 선택의 분모에서 뺀다.
-    private var deletableCount: Int { visibleItems.filter(\.isDeletable).count }
+    private var selectableCount: Int { visibleItems.count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -61,10 +61,10 @@ struct TempTabView: View {
             }
 
             Text(
-                "/private/tmp과 $TMPDIR에서 내 소유이고 열려 있지 않은 항목만 보여 줍니다. "
+                "/private/tmp과 $TMPDIR의 내 소유 임시 항목을 검사합니다. "
                     + "Claude·Codex 작업물은 세션이 끝났거나 빌드가 멈춘 뒤 30분 넘게 변경이 없으면, "
                     + "그 밖의 항목은 24시간 넘게 읽지도 쓰지도 않았을 때 후보가 됩니다. "
-                    + "사용 중인 작업물은 회색으로 보이고 선택할 수 없습니다."
+                    + "사용 중인 작업물도 경고와 함께 표시하며 선택해 강제 삭제할 수 있습니다."
             )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -85,10 +85,10 @@ struct TempTabView: View {
             } else {
                 HeaderedList(
                     selection: SelectionState(
-                        selected: visibleItems.filter { $0.isSelected && $0.isDeletable }.count,
-                        selectable: deletableCount
+                        selected: visibleItems.filter(\.isSelected).count,
+                        selectable: selectableCount
                     ),
-                    isEnabled: deletableCount > 0,
+                    isEnabled: selectableCount > 0,
                     onToggle: { select($0) }
                 ) {
                     SortableColumnLabel(
@@ -118,14 +118,25 @@ struct TempTabView: View {
         }
         .padding()
         .confirmationDialog(
-            "선택한 항목을 완전히 삭제합니다. 휴지통을 거치지 않으며 되돌릴 수 없습니다.",
+            selectedInUseCount > 0
+                ? "사용 중인 임시파일을 강제로 삭제하시겠습니까?"
+                : "선택한 항목을 완전히 삭제하시겠습니까?",
             isPresented: $isConfirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("\(selectedCount)개 완전 삭제", role: .destructive) {
-                viewModel.deleteSelected()
+            Button(
+                selectedInUseCount > 0 ? "\(selectedCount)개 강제 삭제" : "\(selectedCount)개 완전 삭제",
+                role: .destructive
+            ) {
+                viewModel.deleteSelected(allowInUse: selectedInUseCount > 0)
             }
             Button("취소", role: .cancel) {}
+        } message: {
+            Text(
+                selectedInUseCount > 0
+                    ? "선택 항목 중 \(selectedInUseCount)개가 사용 중입니다. 삭제하면 실행 중인 세션이나 빌드가 실패할 수 있으며 되돌릴 수 없습니다."
+                    : "휴지통을 거치지 않으며 되돌릴 수 없습니다."
+            )
         }
         // 재진입 시 이전 결과를 그대로 보여 주면서 뒤에서 다시 스캔한다.
         .onAppearDeferred { viewModel.refresh() }
@@ -196,19 +207,17 @@ private struct TempCandidateRows: View {
 
     private func row(_ item: TempCandidate, group: TempCandidateGroup) -> some View {
         HStack(spacing: 8) {
-            // 사용 중 행은 체크할 수 없다. 왜 안 지워지는지는 아래 근거 줄이 말한다.
             Toggle(isOn: $viewModel.items.field(\.isSelected, id: item.id, default: false)) {
                 EmptyView()
             }
                 .toggleStyle(.checkbox)
                 .labelsHidden()
-                .disabled(item.isInUse)
+                .accessibilityLabel("\(item.name) 선택\(item.isInUse ? ", 사용 중 경고" : "")")
                 .frame(width: ListColumn.checkbox, alignment: .leading)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.name)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(item.isInUse ? .secondary : .primary)
                     .help(item.path.path)
                 // 판정 근거는 한 줄로 길어서 열로 세우면 잘린다. 이름 아래에 둔다.
                 Text(item.evidence)

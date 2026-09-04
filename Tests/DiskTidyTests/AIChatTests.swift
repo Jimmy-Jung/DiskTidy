@@ -964,6 +964,25 @@ struct ScreenContextTests {
         }
     }
 
+    private func tempCandidate(
+        _ name: String, selected: Bool, inUse: Bool
+    ) -> TempCandidate {
+        TempCandidate(
+            name: name,
+            path: URL(fileURLWithPath: "/private/tmp/\(name)"),
+            canonicalPath: "/private/tmp/\(name)",
+            sizeBytes: 1,
+            modifiedDate: Date(timeIntervalSince1970: 0),
+            identity: FileIdentity(
+                device: 1, inode: UInt64(name.hashValue.magnitude), ownerUID: 0, mode: 0,
+                modifiedAt: FileTimestamp(seconds: 0, nanoseconds: 0),
+                accessedAt: FileTimestamp(seconds: 0, nanoseconds: 0)
+            ),
+            isSelected: selected,
+            isInUse: inUse
+        )
+    }
+
     @Test("목록이 길면 상한까지만 넣고 생략 사실을 밝힌다")
     func truncatesLongLists() {
         let viewModel = CleanableListViewModel(scan: { [] })
@@ -986,6 +1005,19 @@ struct ScreenContextTests {
         #expect(context.lines.filter { $0.hasSuffix("선택됨") }.count == 2)
         // 되돌릴 수 있는 삭제인지 아닌지는 모델이 반드시 알아야 한다.
         #expect(context.lines.contains { $0.contains("휴지통으로 이동") })
+    }
+
+    @Test("임시파일 컨텍스트는 선택한 사용 중 항목 수를 명시한다")
+    func reportsSelectedInUseTempItems() {
+        let viewModel = TempCleanupViewModel()
+        viewModel.items = [
+            tempCandidate("selected-active", selected: true, inUse: true),
+            tempCandidate("idle-active", selected: false, inUse: true),
+        ]
+
+        let context = ScreenContextBuilder.temp(viewModel: viewModel)
+
+        #expect(context.lines.contains("선택한 항목 중 사용 중 1개 — 강제 삭제 확인 필요"))
     }
 
     @Test("스캔 실패 배너는 컨텍스트에도 실린다")

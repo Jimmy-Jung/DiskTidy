@@ -137,6 +137,8 @@ drwxrwxrwx  jimmy  .dotnet                         ← 툴체인 상태 디렉�
 | 에이전트 잡파일 | 파일이 안 열려 있고 `mtime` 30분 초과. Claude 세션에 딸린 것은 그 세션이 끝났을 때만 | 단독으로 의미 없는 부속물 |
 | 출처 모름 | 기존 규칙, 보존 기간 3일 → **1일** | tmp의 큰 몫은 이제 에이전트 클래스가 가져가므로 하루면 충분 |
 
+이 표는 일반 자동 후보 조건이다. 출처가 확인된 Claude 세션·DerivedData가 사용 중이면 규칙 3·4의 예외인 경고 행으로만 표시하고, 사용자가 별도 위험 확인을 해야 강제 삭제 경로를 연다.
+
 **라이브 세션 판정 (세 신호 중 하나면 사용 중)**
 
 1. `~/.claude/sessions/<pid>.json`(`pid`, `sessionId`, `cwd`, `startedAt`) 중 `kill(pid, 0)`이 성공하는 것의 `sessionId`와 같다.
@@ -151,9 +153,9 @@ drwxrwxrwx  jimmy  .dotnet                         ← 툴체인 상태 디렉�
 
 **atime을 보지 않는 이유**: 규칙 3이 atime을 본 것은 "한 번 쓰고 계속 읽는" 파일 때문인데, 에이전트 작업물을 읽는 주체는 그 프로세스이고 그건 ①②가 잡는다. atime을 남기면 우리 `du`가 방금 만든 파일의 atime을 건드려 영영 후보가 되지 않는다(4절 실측).
 
-**살아 있는 세션·참조 중인 DerivedData는 목록에 회색 비활성 행으로 보인다.** 사유(`사용 중 — Claude 세션 실행 중 (PID n)`)를 같이 적는다. 왜 안 뜨는지 보여야 신뢰가 간다. 결정: 라이브지만 유휴한 세션도 **항상 제외**한다(밤새 켜 둔 VS Code 창의 스크래치를 지우면 다음 턴이 깨진다).
+**살아 있는 세션·참조 중인 DerivedData도 목록에 사용 중 경고 행으로 보이며 선택할 수 있다.** 사유(`사용 중 — Claude 세션 실행 중 (PID n)`)를 주황색으로 표시하고, 하나라도 선택하면 확인 대화상자가 세션·빌드 실패 가능성을 명시하며 버튼을 `강제 삭제`로 바꾼다.
 
-**삭제 직전 재검증에 라이브 상태 재조회를 추가했다.** 스캔과 삭제 사이에 `--resume`으로 세션이 살아났거나 빌드가 다시 돌면 `.refused(.inUse)`. 사용 중 행이 UI를 우회해 넘어와도 같은 이유로 거부한다. 기존 identity·lsof·트리 재검증은 그대로.
+**삭제 직전 재검증은 선택 당시의 경고 상태를 구분한다.** 일반 후보가 스캔과 삭제 사이에 `--resume`으로 살아났거나 빌드가 다시 돌면 계속 `.refused(.inUse)`다. 반면 스캔에서 이미 `isInUse`였고 사용자가 확인한 항목은 시간·라이브 상태, 열린 일반 파일과 활동으로 달라질 수 있는 `mtime`·`atime`만 건너뛴다. 디렉터리를 격리한 뒤에는 `lsof`를 다시 실행해 열린 디렉터리 FD나 cwd가 하나라도 있으면 원위치로 복원하고 `.refused(.inUse)`로 거부한다. production root, 격리 경계, `device`·`inode`·UID·mode, 하위 트리의 소유권·종류·마운트·깊이, `RENAME_EXCL` 격리와 복구 검증은 그대로다. 기본 `delete(_:)`는 여전히 사용 중 행을 거부하고 UI가 확인 후 `delete(_:allowInUse: true)`를 명시적으로 호출한다.
 
 **비목표(이번 결정)**: `~/.codex/sessions`(12.6GB) · `~/.claude/projects`(2GB) 등 tmp 밖 에이전트 데이터. 임시파일 탭 범위가 아니다.
 
@@ -369,6 +371,8 @@ enum PermanentDeleter {
 
     /// 되돌릴 수 없다. 반드시 사용자 확인 뒤에만 호출한다.
     static func delete(_ candidate: TempCandidate) -> Outcome
+    /// 사용 중 경고 행을 확인한 경우에만 활동 검사를 건너뛴다.
+    static func delete(_ candidate: TempCandidate, allowInUse: Bool) -> Outcome
     static func pendingRecoveries() -> [QuarantineRecovery]
     /// journal ID로만 복원한다. 임의 source/destination path는 받지 않는다.
     static func restore(_ recoveryID: UUID) -> RestoreOutcome
@@ -419,7 +423,7 @@ struct TempTabView: View {
 }
 ```
 
-삭제 버튼은 스캔·삭제 중과 선택 항목이 없을 때 비활성화한다. 확인 문구는 “선택한 항목을 완전히 삭제합니다. 휴지통을 거치지 않으며 되돌릴 수 없습니다.”로 고정한다. 복구 섹션은 일반 후보와 분리해 원본/격리 경로, `Finder에서 열기`, `복원`만 제공하고 자동 삭제하지 않는다. 삭제 성공 후에는 실제 경로 삭제와 새 `StorageInfo` 여유 용량을 별도 표시한다.
+삭제 버튼은 스캔·삭제 중과 선택 항목이 없을 때 비활성화한다. 사용 중 항목이 없으면 휴지통을 거치지 않는 완전 삭제를, 하나라도 있으면 실행 중인 세션·빌드가 실패할 수 있는 강제 삭제를 확인 문구로 구분한다. 복구 섹션은 일반 후보와 분리해 원본/격리 경로, `Finder에서 열기`, `복원`만 제공하고 자동 삭제하지 않는다. 삭제 성공 후에는 실제 경로 삭제와 새 `StorageInfo` 여유 용량을 별도 표시한다.
 
 ### 수정 `Sources/DiskTidy/Views/ContentView.swift`
 
@@ -478,6 +482,10 @@ p1234\0fcwd\0n/private/tmp/foo\0f3\0nTCP 127.0.0.1:8080\0
 - 복원 전 원래 이름이 다시 채워진 대역 → `RENAME_EXCL` 덮어쓰기 없이 격리 항목 보존·`.refused(.quarantineRecoveryRequired)`와 복구 경로 표시
 - journal ID의 복원 대상 원래 이름이 비어 있음 → `.restored`, stage 항목과 journal 완료 상태가 함께 사라짐
 - 복원 전 stage identity가 journal과 달라진 대역 → 복원·삭제 미시도, Finder 복구 경로만 표시
+- 사용 중 경고 행 + 명시적 `allowInUse` → 열린 일반 파일과 `mtime`·`atime` 변화는 허용하되 inode·소유권·종류·마운트 검증은 유지
+- 격리 뒤 후보 또는 하위 디렉터리 FD/cwd가 열림 → 원위치 복원·`.refused(.inUse)`
+- 사용 중 강제 삭제가 격리 중 중단된 대역 → 같은 inode의 활동 시각 변화는 허용해 원래 자리로 복원
+- 격리 뒤 최종 삭제 실패 → 일반 후보에서 제거하고 복구 목록에만 유지
 - 앱 종료를 모사한 준비/staged journal·손상 journal·orphan stage → 다음 시작 시 복구 목록에만 표시, 자동 삭제 금지
 - `:`를 포함한 두 canonical path → 서로 다른 `TempCandidate.ID`
 

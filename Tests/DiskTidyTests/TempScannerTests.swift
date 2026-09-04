@@ -631,6 +631,7 @@ struct PermanentDeleterTests {
         defer { close(descriptor) }
 
         #expect(PermanentDeleter.delete(candidate) == .refused(.inUse))
+        #expect(PermanentDeleter.delete(candidate, allowInUse: true) == .refused(.inUse))
         #expect(FileManager.default.fileExists(atPath: file.path))
     }
 
@@ -647,6 +648,23 @@ struct PermanentDeleterTests {
 
         let candidate = try makeCandidate(for: directory)
         #expect(PermanentDeleter.delete(candidate) == .refused(.unsafeTree))
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+        #expect(FileManager.default.fileExists(atPath: fifo.path))
+    }
+
+    @Test("사용 중 강제 삭제도 파일 구조 안전 검사는 건너뛰지 않는다")
+    func forcedDeletionStillRefusesUnsafeTree() throws {
+        try temp.makeFile("forced-unsafe/inner.log", bytes: 8)
+        let directory = temp.url.appendingPathComponent("forced-unsafe")
+        let fifo = directory.appendingPathComponent("pipe")
+        #expect(mkfifo(fifo.path, 0o600) == 0)
+
+        var candidate = try makeCandidate(for: directory)
+        candidate.isInUse = true
+
+        #expect(
+            PermanentDeleter.delete(candidate, allowInUse: true) == .refused(.unsafeTree)
+        )
         #expect(FileManager.default.fileExists(atPath: directory.path))
         #expect(FileManager.default.fileExists(atPath: fifo.path))
     }
@@ -862,23 +880,78 @@ struct StageRaceTests {
         #expect(vendor.consumed == 2)
     }
 
-    @Test("이동 직후 대상이 바뀌면 새 항목을 지우지 않고 되돌린다")
+    @Test("강제 삭제도 격리 후 열린 디렉터리는 원위치로 복원한다")
+    func forcedDeletionRestoresOpenStageDirectory() throws {
+        let stageID = UUID()
+        let holder = OpenDirectoryHolder()
+        defer { holder.close(); discard(stageID) }
+        try temp.makeFile("open-stage/inner.log", bytes: 32)
+        let directory = temp.url.appendingPathComponent("open-stage")
+        var candidate = try makeCandidate(for: directory)
+        candidate.isInUse = true
+
+        let outcome = PermanentDeleter.delete(
+            candidate,
+            allowInUse: true,
+            hooks: PermanentDeleter.StageHooks(
+                nextStageID: { stageID },
+                afterStage: { holder.open($0) }
+            )
+        )
+
+        #expect(holder.descriptor >= 0)
+        #expect(outcome == .refused(.inUse))
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+        #expect(!FileManager.default.fileExists(atPath: stageURL(stageID).path))
+        #expect(!FileManager.default.fileExists(atPath: recordURL(stageID).path))
+    }
+
+    @Test("격리 항목 삭제 실패는 일반 오류가 아니라 복구 필요로 남긴다")
+    func removalFailureRequiresRecovery() throws {
+        let stageID = UUID()
+        defer {
+            chflags(stageURL(stageID).path, 0)
+            discard(stageID)
+        }
+        let file = try makeStaleFile("immutable-stage.bin")
+
+        let outcome = PermanentDeleter.delete(
+            try makeCandidate(for: file),
+            hooks: PermanentDeleter.StageHooks(
+                nextStageID: { stageID },
+                afterStage: { staged in
+                    #expect(chflags(staged.path, UInt32(UF_IMMUTABLE)) == 0)
+                }
+            )
+        )
+
+        #expect(outcome == .refused(.quarantineRecoveryRequired))
+        #expect(FileManager.default.fileExists(atPath: stageURL(stageID).path))
+        #expect(PermanentDeleter.pendingRecoveries().contains { $0.id == stageID })
+    }
+
+    @Test("강제 삭제도 이동 직후 inode가 바뀌면 새 항목을 지우지 않고 되돌린다")
     func refusesWhenStagedIdentityChanged() throws {
         // 회귀 방지 핵심. 여기서 그냥 지우면 남이 끼워 넣은 다른 파일을 삭제한다.
         let stageID = UUID()
         defer { discard(stageID) }
         let file = try makeStaleFile("swapped.bin", bytes: 32)
-        let candidate = try makeCandidate(for: file)
+        var candidate = try makeCandidate(for: file)
+        candidate.isInUse = true
 
-        let outcome = PermanentDeleter.delete(candidate, hooks: PermanentDeleter.StageHooks(
-            nextStageID: { stageID },
-            afterStage: { staged in
-                try? FileManager.default.removeItem(at: staged)
-                FileManager.default.createFile(
-                    atPath: staged.path, contents: Data(repeating: 0x7E, count: 9)
-                )
-            }
-        ))
+        let outcome = PermanentDeleter.delete(
+            candidate,
+            allowInUse: true,
+            hooks: PermanentDeleter.StageHooks(
+                nextStageID: { stageID },
+                afterStage: { staged in
+                    try? FileManager.default.removeItem(at: staged)
+                    FileManager.default.createFile(
+                        atPath: staged.path, contents: Data(repeating: 0x7E, count: 9)
+                    )
+                }
+            )
+        )
 
         #expect(outcome == .refused(.identityChanged))
         // 갈아치운 항목은 삭제되지 않고 원래 이름으로 되돌아와 있어야 한다.
@@ -954,6 +1027,32 @@ private final class IDVendor: @unchecked Sendable {
     }
 }
 
+private final class OpenDirectoryHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedDescriptor: Int32 = -1
+
+    func open(_ url: URL) {
+        lock.lock()
+        storedDescriptor = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        lock.unlock()
+    }
+
+    var descriptor: Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedDescriptor
+    }
+
+    func close() {
+        lock.lock()
+        defer { lock.unlock() }
+        if storedDescriptor >= 0 {
+            Darwin.close(storedDescriptor)
+            storedDescriptor = -1
+        }
+    }
+}
+
 // MARK: - 격리 복구
 
 /// 격리 journal의 on-disk 계약을 직접 만들어 검증한다. 앱이 이동 도중에 죽은 상태를
@@ -1000,16 +1099,18 @@ struct QuarantineRecoveryTests {
         sourceParentRelative: String,
         sourceName: String,
         identity: FileIdentity,
+        ignoringActivity: Bool? = nil,
         state: String = "staged"
     ) throws {
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(identity))
-        let record: [String: Any] = [
+        var record: [String: Any] = [
             "id": stageID.uuidString,
             "sourceParentRelative": sourceParentRelative,
             "sourceName": sourceName,
             "identity": encoded,
             "state": state
         ]
+        if let ignoringActivity { record["ignoringActivity"] = ignoringActivity }
         try JSONSerialization.data(withJSONObject: record).write(
             to: records.appendingPathComponent("\(stageID.uuidString).json")
         )
@@ -1055,6 +1156,29 @@ struct QuarantineRecoveryTests {
         #expect(!PermanentDeleter.pendingRecoveries().contains { $0.id == stageID })
     }
 
+    @Test("사용 중 강제 삭제의 복구는 같은 inode의 활동 시각 변화를 허용한다")
+    func restoresActiveStageAfterTimestampChange() throws {
+        defer { cleanUp() }
+        let source = try temp.makeFile("active-restore.bin", bytes: 32)
+        let recorded = try identity(of: source)
+        try stage(source)
+        try writeRecord(
+            sourceParentRelative: fixtureRelativePath,
+            sourceName: source.lastPathComponent,
+            identity: recorded,
+            ignoringActivity: true
+        )
+        var times = [
+            timeval(tv_sec: Int(Date().timeIntervalSince1970), tv_usec: 0),
+            timeval(tv_sec: Int(Date().timeIntervalSince1970), tv_usec: 0),
+        ]
+        #expect(utimes(stageURL.path, &times) == 0)
+
+        #expect(PermanentDeleter.restore(stageID) == .restored)
+        #expect(FileManager.default.fileExists(atPath: source.path))
+        #expect(!FileManager.default.fileExists(atPath: stageURL.path))
+    }
+
     @Test("원래 이름이 다시 채워졌으면 덮어쓰지 않고 격리 항목을 보존한다")
     func neverClobbersOnRestore() throws {
         defer { cleanUp() }
@@ -1090,7 +1214,8 @@ struct QuarantineRecoveryTests {
                 mode: recorded.mode,
                 modifiedAt: recorded.modifiedAt,
                 accessedAt: recorded.accessedAt
-            )
+            ),
+            ignoringActivity: true
         )
 
         #expect(PermanentDeleter.restore(stageID) == .refused(.identityChanged))
@@ -1461,12 +1586,38 @@ struct TempCleanupBehaviorTests {
         #expect(counter.count == 1)
     }
 
+    @Test("사용 중인 항목은 명시적으로 확인한 삭제 요청에만 포함한다")
+    func deletesInUseCandidateOnlyAfterExplicitConfirmation() async {
+        var active = candidate("active")
+        active.isInUse = true
+        let counter = CallCounter()
+        let model = TempCleanupViewModel(delete: { _, _ in
+            counter.record()
+            return .deleted
+        })
+        model.items = [active]
+
+        model.selectAll(true)
+        #expect(model.selectedItems.map(\.name) == ["active"])
+
+        model.deleteSelected()
+        #expect(!model.isDeleting)
+        #expect(counter.count == 0)
+        #expect(model.errorMessage?.contains("강제 삭제") == true)
+
+        model.deleteSelected(allowInUse: true)
+
+        #expect(await waitUntil { !model.isDeleting })
+        #expect(counter.count == 1)
+        #expect(model.items.isEmpty)
+    }
+
     @Test("삭제 시작 후 새로 체크한 항목은 목록에 남는다")
     func doesNotDropItemsSelectedMidDeletion() async {
         // 형제 뷰모델에서 실제로 났던 버그다. 현재 선택 상태로 목록을 지우면
         // 삭제되지도 않은 항목이 조용히 사라진다.
         let gate = DeleteGate()
-        let model = TempCleanupViewModel(delete: { gate.delete($0) })
+        let model = TempCleanupViewModel(delete: { candidate, _ in gate.delete(candidate) })
         model.items = [candidate("a", selected: true), candidate("b")]
 
         model.deleteSelected()
@@ -1486,7 +1637,7 @@ struct TempCleanupBehaviorTests {
             quarantinedPath: URL(fileURLWithPath: "/private/tmp/.DiskTidyQuarantine/x")
         )
         let model = TempCleanupViewModel(
-            delete: { _ in .refused(.quarantineRecoveryRequired) },
+            delete: { _, _ in .refused(.quarantineRecoveryRequired) },
             loadRecoveries: { [recovery] }
         )
         model.items = [candidate("a", selected: true), candidate("b")]
@@ -1502,7 +1653,7 @@ struct TempCleanupBehaviorTests {
 
     @Test("삭제 실패는 항목을 남기고 요약을 내지 않는다")
     func failedDeletionKeepsItem() async {
-        let model = TempCleanupViewModel(delete: { _ in .refused(.inUse) })
+        let model = TempCleanupViewModel(delete: { _, _ in .refused(.inUse) })
         model.items = [candidate("a", selected: true)]
 
         model.deleteSelected()
@@ -1534,7 +1685,7 @@ struct TempCleanupBehaviorTests {
     @Test("선택이 없으면 아무것도 지우지 않는다")
     func noSelectionIsNoOp() {
         let gate = DeleteGate()
-        let model = TempCleanupViewModel(delete: { gate.delete($0) })
+        let model = TempCleanupViewModel(delete: { candidate, _ in gate.delete(candidate) })
         model.items = [candidate("a")]
 
         model.deleteSelected()

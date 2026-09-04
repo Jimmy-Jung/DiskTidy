@@ -58,6 +58,17 @@ struct FileIdentity: Hashable, Codable {
         )
     }
 
+    /// 사용 중 강제 삭제는 쓰기·읽기로 바뀌는 시각만 허용한다.
+    /// 경로가 다른 객체로 교체됐는지는 device와 inode를 포함한 나머지 필드로 계속 막는다.
+    func matches(_ status: stat, ignoringActivity: Bool) -> Bool {
+        let current = FileIdentity(status)
+        guard ignoringActivity else { return self == current }
+        return device == current.device
+            && inode == current.inode
+            && ownerUID == current.ownerUID
+            && mode == current.mode
+    }
+
 }
 
 /// 완전 삭제 대상. `CleanableItem`은 표시와 휴지통 이동만 표현하고 동일성을
@@ -79,12 +90,10 @@ struct TempCandidate: Identifiable, Hashable {
     var isSelected = false
     /// 출처. 판정 규칙과 화면 그룹이 여기서 갈린다 — `AgentWorkspace` 참고.
     var kind: TempCandidateKind = .other
-    /// 후보로 올라온 근거, 또는 사용 중이라 못 지우는 이유. 화면에 한 줄로 보인다.
+    /// 후보로 올라온 근거, 또는 사용 중 경고. 화면에 한 줄로 보인다.
     var evidence: String = ""
-    /// 사용 중이라 보여 주기만 하는 행. 선택·삭제 불가.
+    /// 사용 중 경고가 필요한 행. 사용자가 확인하면 강제 삭제할 수 있다.
     var isInUse = false
-
-    var isDeletable: Bool { !isInUse }
 
     var id: ID {
         ID(canonicalPath: canonicalPath, device: identity.device, inode: identity.inode)

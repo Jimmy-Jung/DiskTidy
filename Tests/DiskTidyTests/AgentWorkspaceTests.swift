@@ -363,13 +363,13 @@ struct ClaudeSessionScanTests {
         let found = try TempScanner.scan(live: live).first { $0.canonicalPath == fixture.session.path }
         let candidate = try #require(found)
         #expect(candidate.kind == .claudeSession(id: sessionID))
-        #expect(candidate.isDeletable)
+        #expect(!candidate.isInUse)
         #expect(candidate.evidence.contains("세션 종료"))
         #expect(candidate.name.hasSuffix(String(sessionID.prefix(8))))
     }
 
-    @Test("살아 있는 세션은 사용 중 행으로만 올라오고 지울 수 없다")
-    func liveSessionIsShownButNotDeletable() throws {
+    @Test("살아 있는 세션은 경고 행으로 올라오며 명시적으로 강제 삭제할 수 있다")
+    func liveSessionCanBeExplicitlyDeleted() throws {
         let sessionID = UUID().uuidString.lowercased()
         let fixture = try makeSession(slug: "DiskTidyTests-\(UUID().uuidString)", sessionID: sessionID)
         defer { cleanUp(fixture) }
@@ -381,11 +381,22 @@ struct ClaudeSessionScanTests {
         let found = try TempScanner.scan(live: live).first { $0.canonicalPath == fixture.session.path }
         let row = try #require(found)
         #expect(row.isInUse)
-        #expect(!row.isDeletable)
         #expect(row.evidence.contains("4242"))
 
-        // 삭제기도 같은 판단을 한다. UI를 우회해 넘겨도 거부된다.
+        // 기본 API는 경고 행이라는 사실만으로 거부한다.
         #expect(PermanentDeleter.delete(row) == .refused(.inUse))
+
+        // 실제 사용 중인 세션처럼 스캔 뒤 파일이 추가돼 디렉터리 mtime이 바뀌고 열린 FD도 남는다.
+        // 강제 삭제는 같은 inode인지 확인하되 이런 활동성 메타데이터 변화는 허용해야 한다.
+        let note = fixture.session.appendingPathComponent("live.log")
+        try Data([0x41]).write(to: note)
+        let descriptor = open(note.path, O_RDONLY)
+        #expect(descriptor >= 0)
+        defer { close(descriptor) }
+
+        // 경고를 확인한 호출만 활동 검사를 건너뛴다.
+        #expect(PermanentDeleter.delete(row, allowInUse: true) == .deleted)
+        #expect(!FileManager.default.fileExists(atPath: fixture.session.path))
     }
 
     @Test("Claude 루트와 슬러그 디렉터리 자체는 후보가 아니다")

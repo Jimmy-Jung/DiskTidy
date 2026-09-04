@@ -124,7 +124,7 @@ enum TempScanner {
 
                 let kind = AgentWorkspace.classify(name: name, isDirectory: isDirectory, path: path)
                 if let reason = AgentWorkspace.blockingReason(for: kind, path: path, live: live) {
-                    // 사용 중인 에이전트 작업물은 왜 안 지워지는지 보이게 비활성 행으로 올린다.
+                    // 사용 중인 에이전트 작업물은 강제 삭제 위험을 알 수 있게 경고 행으로 올린다.
                     // 잡파일까지 올리면 목록이 1바이트 파일로 덮이므로 큰 것만.
                     if kind.group == .codexDerivedData {
                         verified.append(Verified(
@@ -171,7 +171,7 @@ enum TempScanner {
     }
 
     /// `claude-<uid>/<프로젝트 슬러그>/<세션 UUID>` 두 단계를 내려가 세션 디렉터리를 후보 단위로 삼는다.
-    /// 살아 있는 세션은 판정하지 않고 사용 중 행으로 올린다. 슬러그 디렉터리는 후보가 아니다.
+    /// 살아 있는 세션은 판정하지 않고 사용 중 경고 행으로 올린다. 슬러그 디렉터리는 후보가 아니다.
     private static func claudeSessions(
         under claudeRoot: String,
         device: dev_t,
@@ -274,7 +274,8 @@ enum TempScanner {
         rootPaths: Set<String>,
         openPaths: Set<String>,
         now: Date,
-        ageRule: AgeRule
+        ageRule: AgeRule,
+        ignoringActivity: Bool = false
     ) -> Decision {
         // canonicalize에 실패한 경로가 여기까지 오면 경계 검사를 신뢰할 수 없다.
         guard path.hasPrefix("/") else { return .invalidConfiguration }
@@ -294,21 +295,23 @@ enum TempScanner {
         // 그 시점에 mtime이 바뀌어 identity 대조가 복원까지 막는다.
         guard type != S_IFDIR || status.st_mode & S_IWUSR != 0 else { return .wrongType }
 
-        // 규칙 3: `.cold`는 mtime·atime 둘 다, `.quiet`는 mtime만 — 이유는 `AgeRule` 주석.
-        let threshold = ageRule.thresholdNanoseconds
-        let elapsed = nanoseconds(since: now)
-        guard elapsed(FileTimestamp(status.st_mtimespec)) > threshold else { return .tooRecent }
-        if case .cold = ageRule {
-            guard elapsed(FileTimestamp(status.st_atimespec)) > threshold else { return .tooRecent }
-        }
+        if !ignoringActivity {
+            // 규칙 3: `.cold`는 mtime·atime 둘 다, `.quiet`는 mtime만 — 이유는 `AgeRule` 주석.
+            let threshold = ageRule.thresholdNanoseconds
+            let elapsed = nanoseconds(since: now)
+            guard elapsed(FileTimestamp(status.st_mtimespec)) > threshold else { return .tooRecent }
+            if case .cold = ageRule {
+                guard elapsed(FileTimestamp(status.st_atimespec)) > threshold else { return .tooRecent }
+            }
 
-        // 규칙 4는 양방향이다. 디렉터리는 안의 파일 하나만 열려 있어도 통째로 지우면 안 된다.
-        guard !openPaths.contains(path) else { return .inUse }
-        if type == S_IFDIR {
-            // 경계 판정은 CanonicalPath 한 곳에만 둔다. String.hasPrefix는 grapheme
-            // 단위라 결합문자로 시작하는 이름에서 하위 경로를 놓친다.
-            guard !openPaths.contains(where: { CanonicalPath.contains(path, $0) }) else {
-                return .inUse
+            // 규칙 4는 양방향이다. 디렉터리는 안의 파일 하나만 열려 있어도 통째로 지우면 안 된다.
+            guard !openPaths.contains(path) else { return .inUse }
+            if type == S_IFDIR {
+                // 경계 판정은 CanonicalPath 한 곳에만 둔다. String.hasPrefix는 grapheme
+                // 단위라 결합문자로 시작하는 이름에서 하위 경로를 놓친다.
+                guard !openPaths.contains(where: { CanonicalPath.contains(path, $0) }) else {
+                    return .inUse
+                }
             }
         }
 
@@ -342,6 +345,7 @@ enum TempScanner {
         openPaths: Set<String>,
         now: Date,
         ageRule: AgeRule,
+        ignoringActivity: Bool = false,
         depth: Int = 0
     ) -> Bool {
         guard depth < maximumTreeDepth else { return false }
@@ -363,13 +367,14 @@ enum TempScanner {
             // rootPaths를 비워 넘긴다. 하위 항목은 루트일 수 없다.
             guard decide(
                 stat: status, path: child, rootPaths: [],
-                openPaths: openPaths, now: now, ageRule: ageRule
+                openPaths: openPaths, now: now, ageRule: ageRule,
+                ignoringActivity: ignoringActivity
             ) == .eligible else { return false }
 
             if status.st_mode & S_IFMT == S_IFDIR,
                !isTreeSafe(
                    at: child, device: device, openPaths: openPaths, now: now,
-                   ageRule: ageRule, depth: depth + 1
+                   ageRule: ageRule, ignoringActivity: ignoringActivity, depth: depth + 1
                ) { return false }
         }
         return true

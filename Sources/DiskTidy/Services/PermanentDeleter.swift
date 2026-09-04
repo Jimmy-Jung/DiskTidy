@@ -15,6 +15,8 @@ private struct JournalRecord: Codable {
     let sourceParentRelative: String
     let sourceName: String
     let identity: FileIdentity
+    /// 이전 버전 레코드에는 키가 없으므로 optional로 두고 false로 해석한다.
+    let ignoringActivity: Bool?
     /// 복구 로직은 stage 파일의 존재 여부로 판단하므로 이 값을 읽지 않는다.
     /// 어디까지 진행됐는지 사후에 알기 위해 durable하게 남긴다 (설계 문서 4절 요구사항).
     var state: State
@@ -265,10 +267,22 @@ enum PermanentDeleter {
 
     /// 되돌릴 수 없다. 반드시 사용자 확인 뒤에만 호출한다.
     static func delete(_ candidate: TempCandidate) -> Outcome {
-        delete(candidate, hooks: .production)
+        delete(candidate, allowInUse: false, hooks: .production)
+    }
+
+    /// 스캔에서 사용 중 경고가 표시된 항목만 활동 검사를 건너뛴다.
+    /// 루트·소유권·종류·identity·마운트·격리 검증은 그대로 적용한다.
+    static func delete(_ candidate: TempCandidate, allowInUse: Bool) -> Outcome {
+        delete(candidate, allowInUse: allowInUse, hooks: .production)
     }
 
     static func delete(_ candidate: TempCandidate, hooks: StageHooks) -> Outcome {
+        delete(candidate, allowInUse: false, hooks: hooks)
+    }
+
+    static func delete(
+        _ candidate: TempCandidate, allowInUse: Bool, hooks: StageHooks
+    ) -> Outcome {
         let policy = TempRootPolicy.production
         // `/tmp` 표기를 그대로 두면 루트 밖으로 오판하고, 부모 `/tmp`이 심볼릭 링크라
         // `O_NOFOLLOW` 열기도 ELOOP로 실패한다. 표기만 맞춘다 —
@@ -283,6 +297,9 @@ enum PermanentDeleter {
         guard path != quarantineRoot, !CanonicalPath.contains(quarantineRoot, path) else {
             return .refused(.outsideProductionRoot)
         }
+        // 경고 행을 본 사용자가 확인한 경우에만 활동성 메타데이터 변화를 허용한다.
+        guard !candidate.isInUse || allowInUse else { return .refused(.inUse) }
+        let ignoringActivity = candidate.isInUse && allowInUse
 
         let parentPath = (path as NSString).deletingLastPathComponent
         let name = (path as NSString).lastPathComponent
@@ -301,7 +318,9 @@ enum PermanentDeleter {
             // 오류로 세지 않는다. 오류로 두면 목록에 남아 누를 때마다 errno 2가 반복된다.
             return code == ENOENT ? .deleted : .failed(code)
         }
-        guard FileIdentity(current) == candidate.identity else { return .refused(.identityChanged) }
+        guard candidate.identity.matches(current, ignoringActivity: ignoringActivity) else {
+            return .refused(.identityChanged)
+        }
 
         // 마운트 포인트를 품은 디렉터리는 rename이 성공한다(실측). 부모와 device가 다르면
         // 그 자체가 마운트 루트이므로 건드리지 않는다.
@@ -309,21 +328,29 @@ enum PermanentDeleter {
         guard fstat(parentDescriptor, &parentStatus) == 0 else { return .failed(errno) }
         guard current.st_dev == parentStatus.st_dev else { return .refused(.unsafeTree) }
 
-        // lsof 실패는 "열려 있지 않다"가 아니라 "알 수 없다"다. fail-closed로 거부한다.
-        guard let openPaths = try? TempScanner.relevantOpenPaths(policy: policy) else {
-            return .refused(.inUse)
+        // 일반 후보가 스캔 뒤 새로 사용되기 시작한 경우는 계속 fail-closed로 거부한다.
+        let openPaths: Set<String>
+        if ignoringActivity {
+            openPaths = []
+        } else {
+            // lsof 실패는 "열려 있지 않다"가 아니라 "알 수 없다"다. fail-closed로 거부한다.
+            guard let paths = try? TempScanner.relevantOpenPaths(policy: policy) else {
+                return .refused(.inUse)
+            }
+            openPaths = paths
         }
         let now = Date()
 
-        // 사용 중 행은 UI가 선택을 막지만 여기서도 거부한다. 에이전트 작업물은 스캔 때 본
-        // 세션·프로세스 상태를 다시 찍는다 — 그 사이 세션이 재개됐거나 빌드가 다시 돌면 거부한다.
-        guard candidate.isDeletable,
-              AgentWorkspace.blockingReason(for: candidate.kind, path: path, live: .current()) == nil
-        else { return .refused(.inUse) }
+        // 일반 후보는 스캔과 삭제 사이에 세션이 재개되거나 빌드가 다시 돌면 거부한다.
+        if !ignoringActivity,
+           AgentWorkspace.blockingReason(for: candidate.kind, path: path, live: .current()) != nil {
+            return .refused(.inUse)
+        }
 
         switch TempScanner.decide(
             stat: current, path: path, rootPaths: policy.rootSet,
-            openPaths: openPaths, now: now, ageRule: candidate.kind.ageRule
+            openPaths: openPaths, now: now, ageRule: candidate.kind.ageRule,
+            ignoringActivity: ignoringActivity
         ) {
         case .eligible: break
         case .inUse: return .refused(.inUse)
@@ -334,7 +361,7 @@ enum PermanentDeleter {
         if current.st_mode & S_IFMT == S_IFDIR,
            !TempScanner.isTreeSafe(
                at: path, device: current.st_dev, openPaths: openPaths, now: now,
-               ageRule: candidate.kind.ageRule
+               ageRule: candidate.kind.ageRule, ignoringActivity: ignoringActivity
            ) {
             return .refused(.unsafeTree)
         }
@@ -356,6 +383,7 @@ enum PermanentDeleter {
                 sourceParentRelative: relativeParent,
                 sourceName: name,
                 identity: candidate.identity,
+                ignoringActivity: ignoringActivity ? true : nil,
                 state: .prepared
             )
             guard journal.write(record) else { return .refused(.quarantineUnavailable) }
@@ -380,7 +408,7 @@ enum PermanentDeleter {
                 record: record, journal: journal,
                 quarantineDescriptor: quarantineDescriptor,
                 parentDescriptor: parentDescriptor,
-                candidate: candidate, openPaths: openPaths, now: now
+                candidate: candidate, now: now, ignoringActivity: ignoringActivity
             )
         }
         return .failed(lastErrno)
@@ -393,8 +421,8 @@ enum PermanentDeleter {
         quarantineDescriptor: Int32,
         parentDescriptor: Int32,
         candidate: TempCandidate,
-        openPaths: Set<String>,
-        now: Date
+        now: Date,
+        ignoringActivity: Bool
     ) -> Outcome {
         let stageName = record.id.uuidString
 
@@ -405,7 +433,7 @@ enum PermanentDeleter {
             return .refused(.quarantineRecoveryRequired)
         }
 
-        guard FileIdentity(stagedStatus) == candidate.identity else {
+        guard candidate.identity.matches(stagedStatus, ignoringActivity: ignoringActivity) else {
             // 검증 뒤 마지막 이름이 바뀐 경우. 새 항목은 절대 지우지 않고 되돌린다.
             return restoreStage(
                 record: record, journal: journal,
@@ -424,19 +452,39 @@ enum PermanentDeleter {
             // 이동 전 스냅샷의 경로는 `<root>/<name>/…`이고 재검증 대상은
             // `<root>/.DiskTidyQuarantine/<uuid>/…`다. 그대로 쓰면 접두사가 영영 일치하지 않아
             // 마지막 관문에서 규칙 4가 죽는다. 격리 경로 기준으로 다시 찍는다.
-            guard let stagedOpenPaths = try? TempScanner.relevantOpenPaths(
-                policy: TempRootPolicy.production
-            ) else {
-                return restoreStage(
-                    record: record, journal: journal,
-                    quarantineDescriptor: quarantineDescriptor,
-                    parentDescriptor: parentDescriptor,
-                    onSuccess: .inUse
-                )
+            let stagedOpenPaths: Set<String>
+            if ignoringActivity {
+                // 열린 일반 파일은 unlink할 수 있지만 열린 디렉터리 FD/cwd는 rename 뒤에도
+                // 자식을 만들 수 있다. 마지막 트리 검증을 무효화하므로 원위치로 복원한다.
+                guard let paths = try? TempScanner.relevantOpenPaths(
+                    policy: TempRootPolicy.production
+                ), let hasOpenDirectory = hasOpenDirectory(atOrBelow: stagePath, in: paths),
+                      !hasOpenDirectory else {
+                    return restoreStage(
+                        record: record, journal: journal,
+                        quarantineDescriptor: quarantineDescriptor,
+                        parentDescriptor: parentDescriptor,
+                        onSuccess: .inUse
+                    )
+                }
+                stagedOpenPaths = []
+            } else {
+                guard let paths = try? TempScanner.relevantOpenPaths(
+                    policy: TempRootPolicy.production
+                ) else {
+                    return restoreStage(
+                        record: record, journal: journal,
+                        quarantineDescriptor: quarantineDescriptor,
+                        parentDescriptor: parentDescriptor,
+                        onSuccess: .inUse
+                    )
+                }
+                stagedOpenPaths = paths
             }
             if !TempScanner.isTreeSafe(
                 at: stagePath, device: stagedStatus.st_dev, openPaths: stagedOpenPaths,
-                now: now, ageRule: candidate.kind.ageRule
+                now: now, ageRule: candidate.kind.ageRule,
+                ignoringActivity: ignoringActivity
             ) {
                 return restoreStage(
                     record: record, journal: journal,
@@ -456,12 +504,28 @@ enum PermanentDeleter {
                 \(error.localizedDescription, privacy: .public)
                 """
             )
-            return .failed(posixCode(of: error))
+            // 원본에서는 이미 격리로 이동했다. 일반 실패로 돌리면 후보 목록에도 남아
+            // 복구 목록과 중복되므로, journal을 보존한 채 복구 대상으로만 올린다.
+            return .refused(.quarantineRecoveryRequired)
         }
 
         // 성공 삭제 뒤에만 journal을 완료 상태(= 레코드 제거)로 만든다.
         journal.remove(record.id)
         return .deleted
+    }
+
+    /// 열린 디렉터리는 stage rename 뒤에도 기존 FD를 통해 자식을 만들 수 있다.
+    /// 경로가 사라져 타입을 확인할 수 없는 경우도 안전을 증명할 수 없으므로 nil이다.
+    private static func hasOpenDirectory(
+        atOrBelow root: String, in openPaths: Set<String>
+    ) -> Bool? {
+        for path in openPaths
+        where path == root || CanonicalPath.contains(root, path) {
+            var status = stat()
+            guard lstat(path, &status) == 0 else { return nil }
+            if status.st_mode & S_IFMT == S_IFDIR { return true }
+        }
+        return false
     }
 
     /// 격리에서 원래 자리로 되돌린다. 되돌리지 못하면 항목을 보존한 채 복구를 요구한다.
@@ -569,7 +633,9 @@ enum PermanentDeleter {
             return .restored
         }
         // 복원 직전에도 stage identity를 journal과 대조한다.
-        guard FileIdentity(stagedStatus) == record.identity else {
+        guard record.identity.matches(
+            stagedStatus, ignoringActivity: record.ignoringActivity == true
+        ) else {
             return .refused(.identityChanged)
         }
 
@@ -591,14 +657,4 @@ enum PermanentDeleter {
         return .restored
     }
 
-    /// Foundation 오류에서 POSIX 코드를 꺼낸다. 없으면 EIO.
-    private static func posixCode(of error: Error) -> Int32 {
-        let nsError = error as NSError
-        if nsError.domain == NSPOSIXErrorDomain { return Int32(nsError.code) }
-        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
-           underlying.domain == NSPOSIXErrorDomain {
-            return Int32(underlying.code)
-        }
-        return EIO
-    }
 }

@@ -31,7 +31,7 @@ final class TempCleanupViewModel: ObservableObject {
     /// 되돌릴 수 없는 삭제라 테스트가 진짜 파일시스템을 건드리면 안 되고,
     /// 스캔 실패·삭제 중 선택 변경 같은 상태 전이는 대역 없이는 고정할 수 없다.
     private let scan: @Sendable () -> Result<[TempCandidate], TempScanner.ScanError>
-    private let delete: @Sendable (TempCandidate) -> PermanentDeleter.Outcome
+    private let delete: @Sendable (TempCandidate, Bool) -> PermanentDeleter.Outcome
     private let loadRecoveries: @Sendable () -> [PermanentDeleter.QuarantineRecovery]
     private let restoreRecovery: @Sendable (UUID) -> PermanentDeleter.RestoreOutcome
     private let availableBytes: @Sendable () -> Int64?
@@ -40,8 +40,8 @@ final class TempCleanupViewModel: ObservableObject {
         scan: @escaping @Sendable () -> Result<[TempCandidate], TempScanner.ScanError> = {
             TempCleanupViewModel.runScan()
         },
-        delete: @escaping @Sendable (TempCandidate) -> PermanentDeleter.Outcome = {
-            PermanentDeleter.delete($0)
+        delete: @escaping @Sendable (TempCandidate, Bool) -> PermanentDeleter.Outcome = {
+            PermanentDeleter.delete($0, allowInUse: $1)
         },
         loadRecoveries: @escaping @Sendable () -> [PermanentDeleter.QuarantineRecovery] = {
             PermanentDeleter.pendingRecoveries()
@@ -58,8 +58,7 @@ final class TempCleanupViewModel: ObservableObject {
         self.availableBytes = availableBytes
     }
 
-    /// 사용 중 행은 체크돼 있어도 삭제 대상이 아니다.
-    var selectedItems: [TempCandidate] { items.filter { $0.isSelected && $0.isDeletable } }
+    var selectedItems: [TempCandidate] { items.filter(\.isSelected) }
     var selectedBytes: Int64 { selectedItems.reduce(0) { $0 + $1.sizeBytes } }
 
     var isWorking: Bool { isScanning || isDeleting }
@@ -93,11 +92,16 @@ final class TempCleanupViewModel: ObservableObject {
         }
     }
 
-    /// 되돌릴 수 없다. 반드시 확인 다이얼로그를 거친 뒤에만 호출한다.
-    func deleteSelected() {
+    /// 되돌릴 수 없다. `allowInUse`는 위험 경고를 확인한 액션에서만 true로 넘긴다.
+    func deleteSelected(allowInUse: Bool = false) {
         guard !isWorking else { return }
         let targets = selectedItems
         guard !targets.isEmpty else { return }
+        guard allowInUse || !targets.contains(where: \.isInUse) else {
+            deletionSummary = nil
+            errorMessage = "사용 중인 항목은 위험 경고를 확인한 뒤 강제 삭제할 수 있습니다."
+            return
+        }
 
         isDeleting = true
         errorMessage = nil
@@ -113,7 +117,9 @@ final class TempCleanupViewModel: ObservableObject {
             for target in targets {
                 // 취소는 항목 사이에서만 본다. 한 항목의 격리·삭제는 쪼갤 수 없다.
                 if Task.isCancelled { break }
-                let outcome = await Task.detached(priority: .userInitiated) { delete(target) }.value
+                let outcome = await Task.detached(priority: .userInitiated) {
+                    delete(target, allowInUse && target.isInUse)
+                }.value
                 results.append((id: target.id, outcome: outcome))
                 self.deletionProgress = DeletionProgress(
                     done: results.count, total: targets.count
@@ -167,8 +173,7 @@ final class TempCleanupViewModel: ObservableObject {
     /// 보이지 않는 항목까지 선택되면 안 된다.
     func selectAll(_ isSelected: Bool, ids: Set<TempCandidate.ID>? = nil) {
         for index in items.indices
-        where (ids?.contains(items[index].id) ?? true)
-            && (items[index].isDeletable || !isSelected) {
+        where ids?.contains(items[index].id) ?? true {
             items[index].isSelected = isSelected
         }
     }

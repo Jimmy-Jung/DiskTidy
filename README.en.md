@@ -155,7 +155,7 @@ The four screens with lists (caches · temp files · simulators · dev daemons) 
 - The **selection summary** shows the size of the whole list while nothing is selected (`125 items · 5.04 GB`) and the selected total afterwards (`3 selected · 1.2 GB`).
 - The **action button is orange only while something is selected.** Disabled it is a plain bordered button, so colour alone tells you whether it can be pressed.
 - The **header checkbox is tri-state**: `☐` nothing, `[-]` some, `☑` all. Pressing it from `[-]` or `☑` clears the selection. The shortcut is ⌘⇧A — ⌘A is left to the AI assistant's text field.
-- **Rows that cannot be selected are excluded from the denominator.** Temp files in use and processes that cannot be quit are never part of select-all, so selecting everything does not get stuck at `[-]`.
+- **Rows that cannot be selected are excluded from the denominator.** Rows with no available action, such as processes that cannot be quit, are not part of select-all. Temp files in use remain selectable and get a separate forced-deletion warning.
 - **Search only narrows the view.** Selected rows stay selected while hidden (the summary count still counts them), and the header checkbox only toggles visible rows.
 - **Sorting is view-only.** It changes neither the scan result nor the deletion targets. Defaults differ per screen: size descending (caches, temp files), last used ascending (simulators), memory descending (dev daemons).
 - The temp-files tab keeps its source groups (Claude session · Codex build output · agent scratch · other) and sorts **within** a group only. Group order encodes risk, so it is not the user's to change.
@@ -269,9 +269,9 @@ Two extra sections sit above the device list. Both go through `simctl`, so neith
 
 ### 3.4 Temp-file safety rules
 
-`/tmp` is a shared directory. Its top level mixes unix sockets, files owned by other users, and markers that are still in use. An entry becomes a deletion candidate only if it passes **all five** rules. Anything that cannot be decided is dropped from the list.
+`/tmp` is a shared directory. Its top level mixes unix sockets, files owned by other users, and markers that are still in use. A normal entry becomes an automatic deletion candidate only if it passes **all five** rules. Anything that cannot be decided is dropped from the list. The only explicit exception is a known agent artifact shown as an in-use warning row, described below.
 
-<img src="docs/diagrams/temp-safety-gates.en.svg" width="900" alt="Temp-file candidate rules: five ordered gates — owned by me, file or directory, age rule, not open in lsof, not a root — produce a candidate, and a directory must also pass the whole subtree, mount boundary, owner-writable and depth 64 conditions">
+<img src="docs/diagrams/temp-safety-gates.en.svg" width="900" alt="Automatic candidate rules for normal temp files: five ordered gates — owned by me, file or directory, age rule, not open in lsof, not a root — produce a candidate, and a directory must also pass the whole subtree, mount boundary, owner-writable and depth 64 conditions. Forced deletion of an in-use agent artifact requires a separate warning and confirmation">
 
 | # | Rule |
 |---|---|
@@ -283,7 +283,7 @@ Two extra sections sit above the device list. Both go through `simctl`, so neith
 
 A directory must pass rules 1–4 for its **entire subtree**, not just itself. One socket or one open file anywhere inside removes the whole directory from the list.
 
-**Agent output is candidate-scoped differently.** `/private/tmp/claude-<uid>` is never taken as a whole; the scan descends to `<project>/<session UUID>` directories, because taking the parent would delete the working files of a session that is running right now. Live sessions and DerivedData a build still references appear as greyed-out rows that cannot be selected. The reasoning is in [`docs/temp-cleanup.md`](docs/temp-cleanup.md) §3-A.
+**Agent output is candidate-scoped differently.** `/private/tmp/claude-<uid>` is never taken as a whole; the scan descends to `<project>/<session UUID>` directories, because taking the parent would delete the working files of a session that is running right now. Live sessions and DerivedData a build still references remain visible with an in-use warning. They can be selected for forced deletion, with a confirmation that warns the running session or build may fail. The reasoning is in [`docs/temp-cleanup.md`](docs/temp-cleanup.md) §3-A.
 
 Three more guards apply:
 
@@ -294,6 +294,7 @@ Three more guards apply:
 #### Observation limits
 
 - **Non-root `lsof` cannot fully see file handles held by root or other users' processes.** A file such a process is holding may look closed.
+- **Forced deletion still refuses an open directory FD or cwd.** The quarantined item is restored in place; only open regular files can be deleted after confirmation.
 - **`atime` does not prove a recent read.** Filesystems may not update it, so it is never treated as proof of use — only as an additional gate.
 - In other words this feature conservatively filters on **state observable from user space only**. Its threat model does not include a hostile process running as the same UID.
 - **App Sandbox / Mac App Store distribution is not supported.** Access to `/private/tmp` assumes a directly distributed app with no entitlements.
