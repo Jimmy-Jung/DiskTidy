@@ -1,7 +1,7 @@
 # DiskTidy
 
 - Author: JunyoungJung
-- Latest version: **1.5.5** (2026-09-03)
+- Latest version: **1.5.6** (2026-09-04)
 - Distribution: direct DMG · ad-hoc signed (not notarized by Apple)
 - Requires: macOS 14 or later
 - License: [MIT](LICENSE) · [한국어](README.md) · [Contributing](CONTRIBUTING.md)
@@ -26,6 +26,18 @@ It only collects the things that actually grow by gigabytes on a development mac
 | Why the window hides behind other apps | [6. Window behavior](#6-window-behavior) |
 | Where things live in the source | [7. Source layout](#7-source-layout) |
 | Why it is built this way | [8. Design notes](#8-design-notes) |
+
+### What changed in 1.5.6
+
+**In-use Claude session scratch and Codex build temp files can now be force-deleted after an explicit risk confirmation.**
+Previously the app showed the reason but disabled selection, so it could not clean up the item even when the user intended to stop the active work.
+
+- In-use warning rows participate in selection and Select All. Selecting any of them changes the confirmation
+  to a dedicated force-delete warning that an active session or build may fail.
+- The default deletion API still refuses in-use items. Activity age, live-process state and open regular files
+  are relaxed only for an item already marked in use and explicitly authorized by the user.
+- An open directory FD or cwd still causes the quarantined item to be restored. Device, inode, UID, mode,
+  subtree ownership/type/mount/depth and quarantine recovery checks remain enforced.
 
 ### What changed in 1.5.5
 
