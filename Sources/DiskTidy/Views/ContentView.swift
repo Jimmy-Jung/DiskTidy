@@ -63,6 +63,16 @@ struct ContentView: View {
                 List(sidebarItems, selection: $selectedTab) { item in
                     Label(item.title, systemImage: item.systemImage)
                 }
+                // `LSUIElement` 앱이라 Dock도 앱 메뉴도 없다 — 표준 "DiskTidy 정보"로 갈 길이
+                // 없어서, 앱 안에서 버전을 확인할 수 있는 자리는 여기뿐이다.
+                Divider()
+                Text("버전 \(AppInfo.displayVersion)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    // 문의할 때 손으로 옮겨 적지 않도록 복사할 수 있게 둔다.
+                    .textSelection(.enabled)
                 UpdateButton(viewModel: update)
             }
             // 폭까지 고정한다. 드래그로 좁히면 그것도 툴바 재배치를 부른다.

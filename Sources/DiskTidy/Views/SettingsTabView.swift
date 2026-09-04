@@ -219,6 +219,11 @@ struct SettingsTabView: View {
                 Text("GitHub 계정이 없다면 메일로 보내 주세요. 제목에 앱 버전이 미리 채워집니다.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                // 메일 제목에 자동으로 박히는 값을 눈으로도 확인·복사할 수 있게 둔다.
+                // GitHub 이슈에는 사용자가 직접 적어야 한다.
+                LabeledContent("현재 버전", value: AppInfo.displayVersion)
+                    .textSelection(.enabled)
             }
         }
         .formStyle(.grouped)
